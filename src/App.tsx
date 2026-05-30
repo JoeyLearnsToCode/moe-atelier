@@ -28,9 +28,6 @@ import {
   cleanupUnusedImageCache,
   collectTaskImageKeys,
   deleteImageCache,
-  type FormatConfig,
-  buildFormatConfig,
-  getDefaultFormatConfig,
   getTaskStorageKey,
   loadCollectionItems,
   loadConfig,
@@ -38,12 +35,9 @@ import {
   loadGlobalStats,
   loadTasks,
   saveConfig,
-  saveCollectionItems,
   STORAGE_KEYS,
 } from './app/storage';
-import { useDebouncedSync, useInputGuard } from './utils/inputSync';
 import {
-  type ApiFormat,
   extractVertexProjectId,
   inferApiVersionFromUrl,
   normalizeApiBase,
@@ -53,22 +47,6 @@ import {
 import { safeStorageSet } from './utils/storage';
 import { calculateSuccessRate, formatDuration } from './utils/stats';
 import { TASK_STATE_VERSION, saveTaskState, DEFAULT_TASK_STATS } from './components/imageTaskState';
-import {
-  authBackend,
-  clearBackendToken,
-  deleteBackendTask,
-  fetchBackendCollection,
-  fetchBackendState,
-  getBackendMode,
-  getBackendToken,
-  buildBackendStreamUrl,
-  patchBackendState,
-  putBackendTask,
-  putBackendCollection,
-  setBackendMode as persistBackendMode,
-  setBackendToken,
-  type BackendStateSnapshot,
-} from './utils/backendApi';
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
@@ -79,276 +57,27 @@ const EMPTY_GLOBAL_STATS: GlobalStats = {
   slowestTime: 0,
   totalTime: 0,
 };
-const API_FORMATS: ApiFormat[] = ['openai', 'gemini', 'vertex'];
 
-type FormatConfigMap = Record<ApiFormat, FormatConfig>;
-
-const buildBackendFormatConfigs = (
-  value: unknown,
-  fallbackConfig?: AppConfig,
-): FormatConfigMap => {
-  const next = API_FORMATS.reduce((acc, format) => {
-    acc[format] = getDefaultFormatConfig(format);
-    return acc;
-  }, {} as FormatConfigMap);
-  if (value && typeof value === 'object') {
-    const raw = value as Record<string, unknown>;
-    API_FORMATS.forEach((format) => {
-      const entry = raw[format];
-      if (entry && typeof entry === 'object') {
-        next[format] = { ...next[format], ...buildFormatConfig(entry as Partial<AppConfig>) };
-      }
-    });
-  }
-  if (fallbackConfig?.apiFormat) {
-    next[fallbackConfig.apiFormat] = {
-      ...next[fallbackConfig.apiFormat],
-      ...buildFormatConfig(fallbackConfig),
-    };
-  }
-  return next;
-};
 
 function App() {
-  const initialBackendMode = getBackendMode() && Boolean(getBackendToken());
   const [config, setConfig] = useState<AppConfig>(() => loadConfig());
-  const [tasks, setTasks] = useState<TaskConfig[]>(() =>
-    initialBackendMode ? [] : loadTasks(),
-  );
+  const [tasks, setTasks] = useState<TaskConfig[]>(() => loadTasks());
   const [globalStats, setGlobalStats] = useState<GlobalStats>(() => loadGlobalStats());
   const [configVisible, setConfigVisible] = useState(false);
   const [collectionVisible, setCollectionVisible] = useState(false);
-  const [collectedItems, setCollectedItems] = useState<CollectionItem[]>(() =>
-    initialBackendMode ? [] : loadCollectionItems(),
-  );
+  const [collectedItems, setCollectedItems] = useState<CollectionItem[]>(() => loadCollectionItems());
   const [collectionRevision, setCollectionRevision] = useState(0);
   const [promptDrawerVisible, setPromptDrawerVisible] = useState(false);
   const [models, setModels] = useState<{label: string, value: string}[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [form] = Form.useForm();
-  const [backendMode, setBackendModeState] = useState<boolean>(() => initialBackendMode);
-  const [backendAuthPending, setBackendAuthPending] = useState(false);
-  const [backendPassword, setBackendPassword] = useState('');
-  const [backendAuthLoading, setBackendAuthLoading] = useState(false);
-  const [backendSyncing, setBackendSyncing] = useState(false);
-  const backendModeRef = useRef(initialBackendMode);
   const configRef = useRef(config);
-  const backendFormatConfigsRef = useRef<FormatConfigMap>(
-    buildBackendFormatConfigs(null),
-  );
-  const localHydratingRef = useRef(false);
-  const backendApplyingRef = useRef(false);
-  const backendBootstrappedRef = useRef(false);
-  const backendBootstrappingRef = useRef(initialBackendMode);
-  const backendReadyRef = useRef(false);
-  const backendCollectionHydratingRef = useRef(false);
-  const backendCollectionSyncTimerRef = useRef<number | null>(null);
-  const backendCollectionLastPayloadRef = useRef<string>('');
   const collectedItemsRef = useRef(collectedItems);
   const collectionCountRef = useRef(collectedItems.length);
-  const configGuard = useInputGuard({ idleMs: 700 });
-  const backendConfigPayload =
-    backendMode && backendReadyRef.current
-      ? { config, configByFormat: backendFormatConfigsRef.current }
-      : null;
-  const syncBackendConfig = useCallback(
-    (payload: { config: AppConfig; configByFormat: FormatConfigMap }) => {
-      void patchBackendState(payload).catch((err) => {
-        console.warn('后端配置同步失败:', err);
-      });
-    },
-    [],
-  );
-  const configSync = useDebouncedSync({
-    enabled: backendMode && backendReadyRef.current,
-    payload: backendConfigPayload,
-    delay: 500,
-    retryDelay: 200,
-    isBlocked: () => backendApplyingRef.current,
-    onSync: syncBackendConfig,
-  });
-  const {
-    markDirty: markConfigDirty,
-    clearDirty: clearConfigDirty,
-    shouldPreserve: shouldPreserveConfig,
-  } = configGuard;
-  const { markSynced: markConfigSynced } = configSync;
-
-  const applyBackendState = useCallback((state: BackendStateSnapshot) => {
-      if (!backendModeRef.current) return;
-      backendApplyingRef.current = true;
-      backendReadyRef.current = true;
-      if (state?.config) {
-        const formatConfigs = buildBackendFormatConfigs(
-          state.configByFormat,
-          state.config,
-        );
-        const incomingKey = JSON.stringify(state.config);
-        const currentKey = JSON.stringify(configRef.current);
-        const preserveConfig =
-          !backendBootstrappingRef.current && shouldPreserveConfig(incomingKey, currentKey);
-        if (preserveConfig) {
-          const localConfig = configRef.current;
-          const localFormat =
-            localConfig.apiFormat === 'gemini' || localConfig.apiFormat === 'vertex'
-              ? localConfig.apiFormat
-              : 'openai';
-          formatConfigs[localFormat] = {
-            ...formatConfigs[localFormat],
-            ...buildFormatConfig(localConfig),
-          };
-          backendFormatConfigsRef.current = formatConfigs;
-          if (incomingKey === currentKey) {
-            clearConfigDirty();
-          }
-        } else {
-          backendFormatConfigsRef.current = formatConfigs;
-          setConfig(state.config);
-          clearConfigDirty();
-        }
-        markConfigSynced({
-          config: state.config,
-          configByFormat: formatConfigs,
-        });
-        const needsFormatSync =
-          !state.configByFormat ||
-          API_FORMATS.some((format) => !state.configByFormat?.[format]);
-        if (needsFormatSync) {
-          window.setTimeout(() => {
-            if (!backendModeRef.current) return;
-            void patchBackendState({ configByFormat: formatConfigs }).catch((err) => {
-              console.warn('后端配置缓存补全失败:', err);
-            });
-          }, 240);
-        }
-      }
-      const order = Array.isArray(state?.tasksOrder) ? state.tasksOrder : [];
-      setTasks(order.map((id) => ({ id, prompt: '' })));
-      if (state?.globalStats) {
-        setGlobalStats(state.globalStats);
-      }
-      window.setTimeout(() => {
-        backendApplyingRef.current = false;
-      }, 200);
-    }, [clearConfigDirty, markConfigSynced, shouldPreserveConfig]);
-
-  const bootstrapBackendState = useCallback(async () => {
-    backendBootstrappingRef.current = true;
-    setBackendSyncing(true);
-    try {
-      let state = await fetchBackendState();
-      if (!backendModeRef.current) return;
-
-      if (!state.meta.hasSavedState) {
-        const seededFormatConfigs = buildBackendFormatConfigs(null, config);
-        backendFormatConfigsRef.current = seededFormatConfigs;
-        state = await patchBackendState({
-          config,
-          configByFormat: seededFormatConfigs,
-        });
-        if (!backendModeRef.current) return;
-      }
-
-      applyBackendState(state);
-      if (!backendModeRef.current) return;
-
-      if (state.tasksOrder.length === 0) {
-        const newTaskId = uuidv4();
-        await putBackendTask(newTaskId, {
-          version: TASK_STATE_VERSION,
-          prompt: '',
-          concurrency: 2,
-          enableSound: true,
-          retryInterval: 1000,
-          retryLimit: -1,
-          results: [],
-          uploads: [],
-          stats: DEFAULT_TASK_STATS,
-        });
-        if (!backendModeRef.current) return;
-        state = await patchBackendState({ tasksOrder: [newTaskId] });
-        if (!backendModeRef.current) return;
-        applyBackendState(state);
-        return;
-      }
-    } catch (err: any) {
-      console.error(err);
-      message.error('后端模式初始化失败，请检查密码或服务状态');
-      clearBackendToken();
-      persistBackendMode(false);
-      localHydratingRef.current = true;
-      backendModeRef.current = false;
-      setBackendModeState(false);
-      const localConfig = loadConfig();
-      setConfig(localConfig);
-      setTasks(loadTasks());
-      setGlobalStats(loadGlobalStats());
-    } finally {
-      backendBootstrappingRef.current = false;
-      setBackendSyncing(false);
-    }
-  }, [applyBackendState, config]);
-
-  const handleBackendEnable = () => {
-    setBackendPassword('');
-    setBackendAuthPending(true);
-  };
-
-  const handleBackendDisable = () => {
-    setBackendAuthPending(false);
-    setBackendPassword('');
-    clearBackendToken();
-    persistBackendMode(false);
-    localHydratingRef.current = true;
-    backendModeRef.current = false;
-    backendBootstrappingRef.current = false;
-    setBackendModeState(false);
-    const localConfig = loadConfig();
-    setConfig(localConfig);
-    setTasks(loadTasks());
-    setGlobalStats(loadGlobalStats());
-  };
-
-  const handleBackendAuthConfirm = async () => {
-    if (!backendPassword) {
-      message.warning('请输入后端密码');
-      return;
-    }
-    setBackendAuthLoading(true);
-    try {
-      const token = await authBackend(backendPassword);
-      setBackendToken(token);
-      persistBackendMode(true);
-      setBackendModeState(true);
-      backendModeRef.current = true;
-      setBackendAuthPending(false);
-      setBackendPassword('');
-    } catch (err: any) {
-      console.error(err);
-      message.error('后端密码错误或服务器不可用');
-    } finally {
-      setBackendAuthLoading(false);
-    }
-  };
-
-  const handleBackendAuthCancel = () => {
-    setBackendAuthPending(false);
-    setBackendPassword('');
-  };
-
-  React.useEffect(() => {
-    backendModeRef.current = backendMode;
-  }, [backendMode]);
 
   React.useEffect(() => {
     configRef.current = config;
   }, [config]);
-
-  React.useEffect(() => {
-    if (!configVisible) {
-      clearConfigDirty();
-    }
-  }, [configVisible, clearConfigDirty]);
 
   React.useEffect(() => {
     if (!configVisible) return;
@@ -356,82 +85,8 @@ function App() {
   }, [configVisible, config, form]);
 
   React.useEffect(() => {
-    let isActive = true;
-    if (backendMode) {
-      backendCollectionHydratingRef.current = true;
-      backendCollectionLastPayloadRef.current = JSON.stringify(collectedItemsRef.current);
-      void (async () => {
-        try {
-          const items = await fetchBackendCollection();
-          if (!isActive) return;
-          const payload = JSON.stringify(items);
-          backendCollectionLastPayloadRef.current = payload;
-          setCollectedItems(items);
-        } catch (err) {
-          console.warn('后端收藏读取失败:', err);
-        } finally {
-          if (isActive) {
-            backendCollectionHydratingRef.current = false;
-          }
-        }
-      })();
-      return () => {
-        isActive = false;
-      };
-    }
-
-    backendCollectionHydratingRef.current = false;
-    backendCollectionLastPayloadRef.current = '';
-    if (backendCollectionSyncTimerRef.current) {
-      clearTimeout(backendCollectionSyncTimerRef.current);
-      backendCollectionSyncTimerRef.current = null;
-    }
-    const localItems = loadCollectionItems();
-    const filteredItems = localItems.filter((item) => {
-      const localKey = item.localKey || '';
-      if (localKey && isBackendImageKey(localKey)) return false;
-      if (typeof item.image === 'string' && item.image.includes('/api/backend/image/')) {
-        return false;
-      }
-      return true;
-    });
-    setCollectedItems(filteredItems);
-    return () => {
-      isActive = false;
-    };
-  }, [backendMode]);
-
-  React.useEffect(() => {
-    if (backendMode) return;
-    if (localHydratingRef.current) return;
-    saveCollectionItems(collectedItems);
-  }, [collectedItems, backendMode]);
-
-  React.useEffect(() => {
     collectedItemsRef.current = collectedItems;
   }, [collectedItems]);
-
-  React.useEffect(() => {
-    if (!backendMode) return;
-    if (backendCollectionHydratingRef.current) return;
-    const payload = JSON.stringify(collectedItems);
-    if (payload === backendCollectionLastPayloadRef.current) return;
-    backendCollectionLastPayloadRef.current = payload;
-    if (backendCollectionSyncTimerRef.current) {
-      clearTimeout(backendCollectionSyncTimerRef.current);
-    }
-    backendCollectionSyncTimerRef.current = window.setTimeout(() => {
-      void putBackendCollection(collectedItems).catch((err) => {
-        console.warn('后端收藏保存失败:', err);
-      });
-    }, 300);
-    return () => {
-      if (backendCollectionSyncTimerRef.current) {
-        clearTimeout(backendCollectionSyncTimerRef.current);
-        backendCollectionSyncTimerRef.current = null;
-      }
-    };
-  }, [collectedItems, backendMode]);
 
   React.useEffect(() => {
     if (collectionCountRef.current > collectedItems.length) {
@@ -442,23 +97,9 @@ function App() {
 
   React.useEffect(() => {
     if (config.enableCollection) return;
-    if (backendMode) return;
-    if (localHydratingRef.current) return;
     const keepKeys = collectTaskImageKeys(tasks.map((task) => task.id));
     void cleanupUnusedImageCache(keepKeys);
-  }, [config.enableCollection, tasks, backendMode]);
-
-  React.useEffect(() => {
-    if (!backendMode) {
-      backendBootstrappedRef.current = false;
-      backendBootstrappingRef.current = false;
-      backendReadyRef.current = false;
-      return;
-    }
-    if (backendBootstrappedRef.current) return;
-    backendBootstrappedRef.current = true;
-    void bootstrapBackendState();
-  }, [backendMode, bootstrapBackendState]);
+  }, [config.enableCollection, tasks]);
 
   React.useEffect(() => {
     if (typeof navigator === 'undefined' || !navigator.storage?.persist) return;
@@ -466,84 +107,24 @@ function App() {
   }, []);
 
   React.useEffect(() => {
-    if (backendMode) return;
-    if (localHydratingRef.current) return;
     saveConfig(config);
-  }, [config, backendMode]);
+  }, [config]);
 
   React.useEffect(() => {
-    if (backendMode) {
-      if (!backendReadyRef.current) return;
-      if (backendApplyingRef.current) return;
-      void patchBackendState({ tasksOrder: tasks.map((task: TaskConfig) => task.id) }).catch((err) => {
-        console.warn('后端任务列表同步失败:', err);
-      });
-      return;
-    }
-    if (localHydratingRef.current) return;
     safeStorageSet(
       STORAGE_KEYS.tasks,
       JSON.stringify(tasks.map((task: TaskConfig) => task.id)),
       'app cache',
     );
-  }, [tasks, backendMode]);
+  }, [tasks]);
 
   React.useEffect(() => {
-    if (backendMode) {
-      if (!backendReadyRef.current) return;
-      if (backendApplyingRef.current) return;
-      void patchBackendState({ globalStats }).catch((err) => {
-        console.warn('后端统计同步失败:', err);
-      });
-      return;
-    }
-    if (localHydratingRef.current) return;
     safeStorageSet(
       STORAGE_KEYS.globalStats,
       JSON.stringify(globalStats),
       'app cache',
     );
-  }, [globalStats, backendMode]);
-
-  React.useEffect(() => {
-    if (backendMode) return;
-    if (!localHydratingRef.current) return;
-    localHydratingRef.current = false;
-  }, [backendMode]);
-
-  React.useEffect(() => {
-    if (!backendMode) return;
-    const streamUrl = buildBackendStreamUrl();
-    const source = new EventSource(streamUrl);
-    const handleState = (event: MessageEvent) => {
-      if (!backendModeRef.current) return;
-      try {
-        const payload = JSON.parse(event.data || '{}');
-        applyBackendState(payload);
-      } catch (err) {
-        console.warn('解析后端状态事件失败:', err);
-      }
-    };
-    const handleTask = (event: MessageEvent) => {
-      if (!backendModeRef.current) return;
-      try {
-        const payload = JSON.parse(event.data || '{}');
-        window.dispatchEvent(new CustomEvent('backend-task-update', { detail: payload }));
-      } catch (err) {
-        console.warn('解析后端任务事件失败:', err);
-      }
-    };
-    source.addEventListener('state', handleState as EventListener);
-    source.addEventListener('task', handleTask as EventListener);
-    source.onerror = () => {
-      console.warn('后端事件流断开，等待自动重连');
-    };
-    return () => {
-      source.removeEventListener('state', handleState as EventListener);
-      source.removeEventListener('task', handleTask as EventListener);
-      source.close();
-    };
-  }, [backendMode, applyBackendState]);
+  }, [globalStats]);
 
   const fetchModels = async () => {
     const currentConfig = form.getFieldsValue();
@@ -663,22 +244,6 @@ function App() {
 
   const handleAddTask = () => {
     const newTaskId = uuidv4();
-    if (backendMode) {
-      void putBackendTask(newTaskId, {
-        version: TASK_STATE_VERSION,
-        prompt: '',
-        concurrency: 2,
-        enableSound: true,
-        retryInterval: 1000,
-        retryLimit: -1,
-        results: [],
-        uploads: [],
-        stats: DEFAULT_TASK_STATS,
-      }).catch((err) => {
-        console.error(err);
-        message.error('创建后端任务失败');
-      });
-    }
     setTasks([...tasks, { id: newTaskId, prompt: '' }]);
   };
 
@@ -688,38 +253,18 @@ function App() {
 
   const handleCreateTaskFromPrompt = (prompt: string) => {
     const newTaskId = uuidv4();
-    
-    // Pre-save task state with prompt
     const storageKey = getTaskStorageKey(newTaskId);
-    if (backendMode) {
-      void putBackendTask(newTaskId, {
-        version: TASK_STATE_VERSION,
-        prompt: prompt,
-        concurrency: 2,
-        enableSound: true,
-        retryInterval: 1000,
-        retryLimit: -1,
-        results: [],
-        uploads: [],
-        stats: DEFAULT_TASK_STATS,
-      }).catch((err) => {
-        console.error(err);
-        message.error('创建后端任务失败');
-      });
-    } else {
-      saveTaskState(storageKey, {
-        version: TASK_STATE_VERSION,
-        prompt: prompt,
-        // If we could handle image upload here we would, but for now just prompt
-        concurrency: 2,
-        enableSound: true,
-        retryInterval: 1000,
-        retryLimit: -1,
-        results: [],
-        uploads: [],
-        stats: DEFAULT_TASK_STATS,
-      });
-    }
+    saveTaskState(storageKey, {
+      version: TASK_STATE_VERSION,
+      prompt: prompt,
+      concurrency: 2,
+      enableSound: true,
+      retryInterval: 1000,
+      retryLimit: -1,
+      results: [],
+      uploads: [],
+      stats: DEFAULT_TASK_STATS,
+    });
 
     setTasks([...tasks, { id: newTaskId, prompt }]);
   };
@@ -743,34 +288,17 @@ function App() {
       });
 
     const storageKey = getTaskStorageKey(newTaskId);
-    if (backendMode) {
-      void putBackendTask(newTaskId, {
-        version: TASK_STATE_VERSION,
-        prompt: prompt,
-        concurrency: 2,
-        enableSound: true,
-        retryInterval: 1000,
-        retryLimit: -1,
-        results: [],
-        uploads: uploads,
-        stats: DEFAULT_TASK_STATS,
-      }).catch((err) => {
-        console.error(err);
-        message.error('创建后端任务失败');
-      });
-    } else {
-      saveTaskState(storageKey, {
-        version: TASK_STATE_VERSION,
-        prompt: prompt,
-        concurrency: 2,
-        enableSound: true,
-        retryInterval: 1000,
-        retryLimit: -1,
-        results: [],
-        uploads: uploads,
-        stats: DEFAULT_TASK_STATS,
-      });
-    }
+    saveTaskState(storageKey, {
+      version: TASK_STATE_VERSION,
+      prompt: prompt,
+      concurrency: 2,
+      enableSound: true,
+      retryInterval: 1000,
+      retryLimit: -1,
+      results: [],
+      uploads: uploads,
+      stats: DEFAULT_TASK_STATS,
+    });
 
     setTasks([...tasks, { id: newTaskId, prompt }]);
     setCollectionVisible(false);
@@ -778,34 +306,23 @@ function App() {
   };
 
   const isCollectionCacheKey = (key: string) => key.startsWith('collection:');
-  const isBackendImageKey = (key: string) => /\.[a-z0-9]+$/i.test(key);
-  const getBackendFormatConfig = (format: ApiFormat) =>
-    backendFormatConfigsRef.current[format];
 
   const handleRemoveTask = (id: string) => {
-    if (backendMode) {
-      void deleteBackendTask(id).catch((err) => {
-        console.error(err);
-        message.error('删除后端任务失败');
-      });
+    const storageKey = getTaskStorageKey(id);
+    const preserveKeys = config.enableCollection
+      ? collectedItems
+          .filter(
+            (item) =>
+              item.taskId === id &&
+              typeof item.localKey === 'string' &&
+              !isCollectionCacheKey(item.localKey),
+          )
+          .map((item) => item.localKey as string)
+      : [];
+    if (preserveKeys.length > 0) {
+      void cleanupTaskCache(storageKey, { preserveImageKeys: preserveKeys });
     } else {
-      const storageKey = getTaskStorageKey(id);
-      const preserveKeys = config.enableCollection
-        ? collectedItems
-            .filter(
-              (item) =>
-                item.taskId === id &&
-                typeof item.localKey === 'string' &&
-                !isCollectionCacheKey(item.localKey) &&
-                !isBackendImageKey(item.localKey),
-            )
-            .map((item) => item.localKey as string)
-        : [];
-      if (preserveKeys.length > 0) {
-        void cleanupTaskCache(storageKey, { preserveImageKeys: preserveKeys });
-      } else {
-        void cleanupTaskCache(storageKey);
-      }
+      void cleanupTaskCache(storageKey);
     }
     setTasks(tasks.filter((t: TaskConfig) => t.id !== id));
   };
@@ -841,14 +358,8 @@ function App() {
       typeof changedValues?.apiFormat === 'string' &&
       changedValues.apiFormat !== config.apiFormat;
 
-    if (backendMode) {
-      markConfigDirty();
-    }
-
     if (formatChanged && !changedValues.activeApiProfileId) {
-      const formatConfig = backendMode
-        ? getBackendFormatConfig(nextFormat)
-        : loadFormatConfig(nextFormat);
+      const formatConfig = loadFormatConfig(nextFormat);
       nextConfig = { ...nextConfig, ...formatConfig, apiFormat: nextFormat };
       form.setFieldsValue({
         apiUrl: formatConfig.apiUrl,
@@ -886,13 +397,6 @@ function App() {
       }
     }
 
-    if (backendMode) {
-      backendFormatConfigsRef.current = {
-        ...backendFormatConfigsRef.current,
-        [nextConfig.apiFormat]: buildFormatConfig(nextConfig),
-      };
-    }
-
     setConfig(nextConfig);
   };
 
@@ -913,7 +417,7 @@ function App() {
   const getCollectionGroupKey = (item: CollectionItem) =>
     buildPromptKey(typeof item.prompt === 'string' ? item.prompt : '');
 
-  const getCollectionKey = (item: CollectionItem, useIdOnly = false) => {
+  const getCollectionKey = (item: CollectionItem, useIdOnly?: boolean) => {
     if (isUploadCollectionItem(item) && item.sourceSignature) {
       return `upload:${buildPromptKey(item.prompt)}:${item.sourceSignature}`;
     }
@@ -929,11 +433,11 @@ function App() {
       timestamp: typeof item.timestamp === 'number' ? item.timestamp : Date.now(),
       taskId: typeof item.taskId === 'string' ? item.taskId : '',
     };
-    const incomingKey = getCollectionKey(normalized, backendMode);
+    const incomingKey = getCollectionKey(normalized);
     setCollectedItems((prev) => {
       if (!incomingKey) return [normalized, ...prev];
       const existingIndex = prev.findIndex(
-        (entry) => getCollectionKey(entry, backendMode) === incomingKey,
+        (entry) => getCollectionKey(entry) === incomingKey,
       );
       if (existingIndex === -1) {
         return [normalized, ...prev];
@@ -941,7 +445,7 @@ function App() {
       const existing = prev[existingIndex];
       const updated = { ...existing, ...normalized, id: existing.id || normalized.id };
       const next = prev.filter(
-        (entry) => getCollectionKey(entry, backendMode) !== incomingKey,
+        (entry) => getCollectionKey(entry) !== incomingKey,
       );
       return [updated, ...next];
     });
@@ -956,11 +460,9 @@ function App() {
   const handleRemoveCollectedItem = (id: string) => {
     setCollectedItems((prev) => {
       const target = prev.find((item) => item.id === id);
-      if (!backendMode) {
-        const cacheKey = target ? getCollectionCacheKey(target) : undefined;
-        if (cacheKey) {
-          void deleteImageCache(cacheKey);
-        }
+      const cacheKey = target ? getCollectionCacheKey(target) : undefined;
+      if (cacheKey) {
+        void deleteImageCache(cacheKey);
       }
       return prev.filter((item) => item.id !== id);
     });
@@ -971,37 +473,33 @@ function App() {
       const toRemove = prev.filter(
         (item) => getCollectionGroupKey(item) === groupKey,
       );
-      if (!backendMode) {
-        const keys = Array.from(
-          new Set(
-            toRemove
-              .map((item) => getCollectionCacheKey(item))
-              .filter((key): key is string => typeof key === 'string'),
-          ),
-        );
-        keys.forEach((key) => {
-          void deleteImageCache(key);
-        });
-      }
-      return prev.filter((item) => getCollectionGroupKey(item) !== groupKey);
-    });
-  };
-
-  const handleClearCollection = () => {
-    if (!backendMode) {
       const keys = Array.from(
         new Set(
-          collectedItems
-            .map((item) =>
-              getCollectionCacheKey(item),
-            )
+          toRemove
+            .map((item) => getCollectionCacheKey(item))
             .filter((key): key is string => typeof key === 'string'),
         ),
       );
       keys.forEach((key) => {
         void deleteImageCache(key);
       });
-    }
+      return prev.filter((item) => getCollectionGroupKey(item) !== groupKey);
+    });
+  };
+
+  const handleClearCollection = () => {
+    const keys = Array.from(
+      new Set(
+        collectedItems
+          .map((item) =>
+            getCollectionCacheKey(item),
+          )
+          .filter((key): key is string => typeof key === 'string'),
+      ),
+    );
+    keys.forEach((key) => {
+      void deleteImageCache(key);
+    });
     setCollectedItems([]);
   };
 
@@ -1040,7 +538,6 @@ function App() {
   const fastestTimeStr = formatDuration(globalStats.fastestTime);
 
   const slowestTimeStr = formatDuration(globalStats.slowestTime);
-  const backendSwitchChecked = backendMode || backendAuthPending;
 
   return (
     <ConfigProvider
@@ -1190,7 +687,6 @@ function App() {
                 size="small"
                 icon={<DeleteFilled />}
                 onClick={handleClearGlobalStats}
-                disabled={backendSyncing}
                 style={{ 
                   background: 'rgba(255,255,255,0.6)', 
                   border: '1px solid #FF9EB5',
@@ -1304,7 +800,6 @@ function App() {
           <TaskGrid
             tasks={tasks}
             config={config}
-            backendMode={backendMode}
             collectionRevision={collectionRevision}
             onRemoveTask={handleRemoveTask}
             onStatsUpdate={updateGlobalStats}
@@ -1322,7 +817,6 @@ function App() {
         {config.enableCollection && (
           <CollectionBox
             visible={collectionVisible}
-            backendMode={backendMode}
             onClose={() => setCollectionVisible(!collectionVisible)}
             collectedItems={collectedItems}
             onRemoveItem={handleRemoveCollectedItem}
@@ -1336,27 +830,11 @@ function App() {
           visible={configVisible}
           config={config}
           form={form}
-          onClose={() => {
-            setConfigVisible(false);
-            if (backendAuthPending) {
-              handleBackendAuthCancel();
-            }
-          }}
+          onClose={() => setConfigVisible(false)}
           onConfigChange={handleConfigChange}
           models={models}
           loadingModels={loadingModels}
           fetchModels={fetchModels}
-          backendSwitchChecked={backendSwitchChecked}
-          backendSyncing={backendSyncing}
-          backendAuthLoading={backendAuthLoading}
-          backendMode={backendMode}
-          backendAuthPending={backendAuthPending}
-          backendPassword={backendPassword}
-          onBackendPasswordChange={setBackendPassword}
-          onBackendEnable={handleBackendEnable}
-          onBackendDisable={handleBackendDisable}
-          onBackendAuthCancel={handleBackendAuthCancel}
-          onBackendAuthConfirm={handleBackendAuthConfirm}
         />
 
       </Layout>

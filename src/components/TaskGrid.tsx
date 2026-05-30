@@ -32,7 +32,6 @@ import { getTaskStorageKey } from '../app/storage';
 interface TaskGridProps {
   tasks: TaskConfig[];
   config: AppConfig;
-  backendMode: boolean;
   collectionRevision: number;
   onRemoveTask: (id: string) => void;
   onStatsUpdate: (type: 'request' | 'success' | 'fail', duration?: number) => void;
@@ -43,7 +42,6 @@ interface TaskGridProps {
 interface SortableTaskItemProps {
   task: TaskConfig;
   config: AppConfig;
-  backendMode: boolean;
   onRemove: (id: string) => void;
   onStatsUpdate: (type: 'request' | 'success' | 'fail', duration?: number) => void;
   onCollect: (item: CollectionItem) => void;
@@ -56,7 +54,6 @@ const animateLayoutChanges: AnimateLayoutChanges = (args) =>
 const SortableTaskItem = ({
   task,
   config,
-  backendMode,
   onRemove,
   onStatsUpdate,
   onCollect,
@@ -82,7 +79,6 @@ const SortableTaskItem = ({
           id={task.id}
           storageKey={getTaskStorageKey(task.id)}
           config={config}
-          backendMode={backendMode}
           onRemove={() => onRemove(task.id)}
           onStatsUpdate={onStatsUpdate}
           onCollect={onCollect}
@@ -98,7 +94,6 @@ const SortableTaskItem = ({
 const TaskGrid: React.FC<TaskGridProps> = ({
   tasks,
   config,
-  backendMode,
   collectionRevision,
   onRemoveTask,
   onStatsUpdate,
@@ -194,7 +189,6 @@ const TaskGrid: React.FC<TaskGridProps> = ({
               key={task.id}
               task={task}
               config={config}
-              backendMode={backendMode}
               onRemove={onRemoveTask}
               onStatsUpdate={onStatsUpdate}
               onCollect={onCollect}
@@ -216,7 +210,6 @@ const TaskGrid: React.FC<TaskGridProps> = ({
               id={activeId}
               storageKey={getTaskStorageKey(activeId)}
               config={config}
-              backendMode={backendMode}
               onRemove={() => onRemoveTask(activeId)}
               onStatsUpdate={onStatsUpdate}
               collectionRevision={collectionRevision}

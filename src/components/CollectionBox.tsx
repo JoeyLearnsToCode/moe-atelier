@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Drawer, Button, Typography, Space, Image, Tooltip, message } from 'antd';
 import Icon, { DeleteFilled, DownloadOutlined, PictureFilled, LeftOutlined, RightOutlined, CopyFilled, FileTextOutlined } from '@ant-design/icons';
 import { openImageDb, IMAGE_STORE_NAME } from '../utils/imageDb';
-import { buildBackendImageUrl } from '../utils/backendApi';
+
 import { copyTextToClipboard } from '../utils/clipboard';
 import type { CollectionItem } from '../types/collection';
 import { COLORS } from '../theme/colors';
@@ -36,7 +36,6 @@ type CollectionGroup = {
 
 interface CollectionBoxProps {
   visible: boolean;
-  backendMode?: boolean;
   onClose: () => void;
   collectedItems: CollectionItem[];
   onRemoveItem: (id: string) => void;
@@ -46,7 +45,6 @@ interface CollectionBoxProps {
 }
 
 // Helper functions
-const isBackendLocalKey = (key: string) => /\.[a-z0-9]+$/i.test(key);
 const isUploadCollectionKey = (key?: string) =>
   Boolean(key && key.startsWith('collection:upload:'));
 const isUploadCollectionItem = (item: ResolvedCollectionItem) =>
@@ -536,7 +534,6 @@ const CollectionBox: React.FC<CollectionBoxProps> = ({
   onRemoveGroup,
   onClear,
   onCreateTask,
-  backendMode = false,
 }) => {
   const dbPromiseRef = useRef<Promise<IDBDatabase> | null>(null);
   const objectUrlMapRef = useRef<Map<string, string>>(new Map());
@@ -592,20 +589,7 @@ const CollectionBox: React.FC<CollectionBoxProps> = ({
         .map((item) => item.localKey)
         .filter((key): key is string => typeof key === 'string' && key.length > 0),
     );
-    const cacheKeys = backendMode
-      ? new Set(Array.from(activeKeys).filter((key) => !isBackendLocalKey(key)))
-      : activeKeys;
-
-    if (backendMode && cacheKeys.size === 0) {
-      if (objectUrlMapRef.current.size > 0) {
-        objectUrlMapRef.current.forEach((url) => URL.revokeObjectURL(url));
-        objectUrlMapRef.current.clear();
-        setImageCacheVersion((prev) => prev + 1);
-      }
-      return () => {
-        isActive = false;
-      };
-    }
+    const cacheKeys = activeKeys;
 
     objectUrlMapRef.current.forEach((url, key) => {
       if (cacheKeys.has(key)) return;
@@ -629,7 +613,7 @@ const CollectionBox: React.FC<CollectionBoxProps> = ({
     return () => {
       isActive = false;
     };
-  }, [collectedItems, backendMode]);
+  }, [collectedItems]);
 
   useEffect(() => {
     return () => {
@@ -650,15 +634,11 @@ const CollectionBox: React.FC<CollectionBoxProps> = ({
     return collectedItems.map((item) => {
       let resolvedImage = item.image;
       if (item.localKey) {
-        if (backendMode && isBackendLocalKey(item.localKey)) {
-          resolvedImage = buildBackendImageUrl(item.localKey);
-        } else {
-          resolvedImage = objectUrlMapRef.current.get(item.localKey) || item.image;
-        }
+        resolvedImage = objectUrlMapRef.current.get(item.localKey) || item.image;
       }
       return { ...item, resolvedImage };
     });
-  }, [collectedItems, backendMode, imageCacheVersion]);
+  }, [collectedItems, imageCacheVersion]);
 
   const groupedItems = useMemo(() => {
     const sortGroupItems = (a: ResolvedCollectionItem, b: ResolvedCollectionItem) => {

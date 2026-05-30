@@ -40,23 +40,12 @@ import {
 } from '../utils/apiUrl';
 import { calculateSuccessRate, formatDuration } from '../utils/stats';
 import { buildPromptKey } from '../utils/prompt';
-import {
-  buildBackendImageUrl,
-  cleanupBackendImages,
-  fetchBackendTask,
-  generateBackendTask,
-  getBackendToken,
-  patchBackendTask,
-  retryBackendSubTask,
-  stopBackendSubTask,
-  uploadBackendImage,
-  stripBackendToken,
-} from '../utils/backendApi';
+
 import {
   formatResponseErrorMessage,
   formatUnknownErrorMessage,
 } from '../utils/httpError';
-import { useDebouncedSync, useInputGuard } from '../utils/inputSync';
+import { useInputGuard } from '../utils/inputSync';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -65,7 +54,6 @@ interface ImageTaskProps {
   id: string;
   storageKey: string;
   config: AppConfig;
-  backendMode: boolean;
   onRemove: () => void;
   onStatsUpdate: (type: 'request' | 'success' | 'fail', duration?: number) => void;
   onCollect?: (item: CollectionItem) => void;
@@ -75,7 +63,6 @@ interface ImageTaskProps {
 }
 const SUCCESS_AUDIO_SRC = 'https://actions.google.com/sounds/v1/cartoon/magic_chime.ogg';
 const DEFAULT_CONCURRENCY = 2;
-const BACKEND_RESULT_TRANSITION_DELAY_MS = 400;
 
 type UploadFileWithMeta = UploadFile & {
   localKey?: string;
@@ -97,18 +84,17 @@ type CollectionRequestSnapshot = {
   uploads: CollectionUploadSnapshot[];
 };
 
-const normalizeStoredResult = (item: PersistedSubTaskResult, backendMode: boolean): SubTaskResult => {
+const normalizeStoredResult = (item: PersistedSubTaskResult): SubTaskResult => {
   const wasLoading = item.status === 'loading' || item.status === 'pending';
-  const shouldMarkInterrupted = wasLoading && !backendMode;
   const inferredAutoRetry =
     typeof item.autoRetry === 'boolean'
       ? item.autoRetry
       : wasLoading || Boolean(item.error?.includes('后重试...'));
   return {
     id: item.id,
-    status: shouldMarkInterrupted ? 'error' : item.status,
-    error: shouldMarkInterrupted ? '刷新后已中断' : item.error,
-    autoRetry: shouldMarkInterrupted ? false : inferredAutoRetry,
+    status: item.status,
+    error: item.error,
+    autoRetry: inferredAutoRetry,
     retryCount: typeof item.retryCount === 'number' ? item.retryCount : 0,
     startTime: item.startTime,
     endTime: item.endTime,
@@ -134,18 +120,6 @@ const serializeUploads = (uploads: UploadFileWithMeta[]): PersistedUploadImage[]
       sourceSignature: file.sourceSignature,
     }));
 
-const normalizeUploadsPayload = (uploads: PersistedUploadImage[] = []) =>
-  uploads.map((item) => ({
-    uid: item.uid,
-    name: item.name,
-    type: item.type,
-    size: item.size,
-    lastModified: item.lastModified,
-    localKey: item.localKey,
-    fromCollection: item.fromCollection,
-    sourceSignature: item.sourceSignature,
-  }));
-
 const normalizeConcurrency = (value: unknown, fallback = DEFAULT_CONCURRENCY) => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
   return Math.max(1, Math.floor(value));
@@ -154,31 +128,7 @@ const normalizeConcurrency = (value: unknown, fallback = DEFAULT_CONCURRENCY) =>
 const isResultActive = (result?: Pick<SubTaskResult, 'status' | 'autoRetry'> | null) =>
   Boolean(result && (result.status === 'loading' || result.autoRetry));
 
-const isAutoRetryErrorResult = (result?: Pick<SubTaskResult, 'status' | 'autoRetry'> | null) =>
-  Boolean(result && result.status === 'error' && result.autoRetry);
-
-const shouldDelayBackendResultTransition = (
-  previous?: SubTaskResult,
-  next?: SubTaskResult,
-) => {
-  if (!previous || !next) return false;
-  if (!isAutoRetryErrorResult(previous)) return false;
-  if (next.status === 'success') return true;
-  if (next.status !== 'error') return false;
-  if (next.error === '已停止' || next.error === '已暂停重试') {
-    return false;
-  }
-  return (
-    previous.retryCount !== next.retryCount ||
-    previous.error !== next.error ||
-    Boolean(previous.autoRetry) !== Boolean(next.autoRetry) ||
-    previous.localKey !== next.localKey ||
-    previous.sourceUrl !== next.sourceUrl ||
-    previous.displayUrl !== next.displayUrl
-  );
-};
-
-const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMode, onRemove, onStatsUpdate, onCollect, collectionRevision, dragAttributes, dragListeners }: ImageTaskProps) => {
+const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove, onStatsUpdate, onCollect, collectionRevision, dragAttributes, dragListeners }: ImageTaskProps) => {
   const [prompt, setPrompt] = useState('');
   const promptRef = useRef(prompt);
   const promptFocusedRef = useRef(false);
@@ -206,7 +156,6 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
   const isRetryingRef = useRef<Map<string, boolean>>(new Map());
   const taskStartTimesRef = useRef<Map<string, number>>(new Map());
   const retryTimersRef = useRef<Map<string, number>>(new Map());
-  const backendTransitionTimersRef = useRef<Map<string, number>>(new Map());
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const prevResultsRef = useRef<SubTaskResult[]>([]);
   const dbPromiseRef = useRef<Promise<IDBDatabase> | null>(null);
@@ -215,7 +164,6 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
   const cachedUploadKeysRef = useRef<Set<string>>(new Set());
   const collectedCollectionKeysRef = useRef<Set<string>>(new Set());
   const requestContextByResultIdRef = useRef<Map<string, CollectionRequestSnapshot>>(new Map());
-  const pendingBackendGenerateSnapshotRef = useRef<CollectionRequestSnapshot | null>(null);
   const lastCollectionRevisionRef = useRef(collectionRevision);
   const retrySettingsRef = useRef({ interval: retryInterval, limit: retryLimit });
   useEffect(() => {
@@ -229,49 +177,10 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
   const retryIntervalGuard = useInputGuard();
   const retryLimitGuard = useInputGuard();
   const apiProfileGuard = useInputGuard();
-  const backendPayload = React.useMemo(() => {
-    if (!backendMode || !hydrated) return null;
-    return {
-      prompt,
-      concurrency,
-      enableSound,
-      retryInterval,
-      retryLimit,
-      apiProfileId,
-      uploads: normalizeUploadsPayload(serializeUploads(fileList)),
-    };
-  }, [backendMode, hydrated, prompt, concurrency, enableSound, retryInterval, retryLimit, apiProfileId, fileList]);
-  const taskSync = useDebouncedSync({
-    enabled: backendMode && hydrated,
-    payload: backendPayload,
-    delay: 300,
-    onSync: (payload) => {
-      void patchBackendTask(id, payload).catch((err) => {
-        console.warn('后端任务同步失败:', err);
-      });
-    },
-  });
-  const {
-    markDirty: markPromptDirty,
-    clearDirty: clearPromptDirty,
-    shouldPreserve: shouldPreservePromptInput,
-  } = promptGuard;
-  const {
-    markDirty: markRetryIntervalDirty,
-    clearDirty: clearRetryIntervalDirty,
-    shouldPreserve: shouldPreserveRetryIntervalInput,
-  } = retryIntervalGuard;
-  const {
-    markDirty: markRetryLimitDirty,
-    clearDirty: clearRetryLimitDirty,
-    shouldPreserve: shouldPreserveRetryLimitInput,
-  } = retryLimitGuard;
-  const {
-    markDirty: markApiProfileDirty,
-    clearDirty: clearApiProfileDirty,
-    shouldPreserve: shouldPreserveApiProfileInput,
-  } = apiProfileGuard;
-  const { markSynced: markTaskSynced } = taskSync;
+  const { markDirty: markPromptDirty } = promptGuard;
+  const { markDirty: markRetryIntervalDirty } = retryIntervalGuard;
+  const { markDirty: markRetryLimitDirty } = retryLimitGuard;
+  const { markDirty: markApiProfileDirty } = apiProfileGuard;
 
   const resolveTaskApiProfileId = (value?: string) => {
     const availableProfiles = config.apiProfiles || [{ id: 'default', name: '默认配置' }];
@@ -280,246 +189,9 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
     return availableProfiles.some((profile) => profile.id === value) ? value : fallbackProfileId;
   };
 
-  const withBackendToken = (url: string) => {
-    const cleaned = stripBackendToken(url);
-    const token = getBackendToken();
-    if (!token) return cleaned;
-    return cleaned.includes('?')
-      ? `${cleaned}&token=${encodeURIComponent(token)}`
-      : `${cleaned}?token=${encodeURIComponent(token)}`;
-  };
-
-  const resolveBackendDisplayUrl = (localKey?: string, sourceUrl?: string) => {
-    if (localKey) {
-      return buildBackendImageUrl(localKey);
-    }
-    if (sourceUrl) {
-      return sourceUrl.includes('/api/backend/image/')
-        ? withBackendToken(sourceUrl)
-        : sourceUrl;
-    }
-    return undefined;
-  };
-
-  const extractBackendImageKey = (url?: string) => {
-    if (!url) return undefined;
-    const match = url.match(/\/api\/backend\/image\/([^?]+)/);
-    return match ? decodeURIComponent(match[1]) : undefined;
-  };
-
-  const clearBackendTransitionTimer = (resultId?: string) => {
-    if (resultId) {
-      const timerId = backendTransitionTimersRef.current.get(resultId);
-      if (timerId) {
-        clearTimeout(timerId);
-        backendTransitionTimersRef.current.delete(resultId);
-      }
-      return;
-    }
-    backendTransitionTimersRef.current.forEach((timerId) => clearTimeout(timerId));
-    backendTransitionTimersRef.current.clear();
-  };
-
-  const applyBackendResults = (nextResults: SubTaskResult[]) => {
-    const previousResults = currentResultsRef.current;
-    const previousById = new Map(previousResults.map((item) => [item.id, item]));
-    const delayedIds = new Set(
-      nextResults
-        .filter((item) => shouldDelayBackendResultTransition(previousById.get(item.id), item))
-        .map((item) => item.id),
-    );
-
-    backendTransitionTimersRef.current.forEach((_timerId, resultId) => {
-      if (!nextResults.some((item) => item.id === resultId)) {
-        clearBackendTransitionTimer(resultId);
-      }
-    });
-
-    if (delayedIds.size === 0) {
-      nextResults.forEach((item) => clearBackendTransitionTimer(item.id));
-      currentResultsRef.current = nextResults;
-      setResults(nextResults);
-      return;
-    }
-
-    const immediateResults = nextResults.map((item) =>
-      delayedIds.has(item.id) ? previousById.get(item.id) || item : item,
-    );
-    currentResultsRef.current = immediateResults;
-    setResults(immediateResults);
-
-    nextResults.forEach((item) => {
-      if (!delayedIds.has(item.id)) {
-        clearBackendTransitionTimer(item.id);
-        return;
-      }
-
-      clearBackendTransitionTimer(item.id);
-      const paperEl = document.getElementById(`paper-${item.id}`);
-      if (paperEl) {
-        paperEl.classList.add('polaroid-dropping');
-      }
-      const timerId = window.setTimeout(() => {
-        clearBackendTransitionTimer(item.id);
-        setResults((current) => {
-          const updated = current.map((currentItem) =>
-            currentItem.id === item.id ? item : currentItem,
-          );
-          currentResultsRef.current = updated;
-          return updated;
-        });
-      }, BACKEND_RESULT_TRANSITION_DELAY_MS);
-      backendTransitionTimersRef.current.set(item.id, timerId);
-    });
-  };
-
-  const applyBackendTaskState = (
-    stored: PersistedImageTaskState,
-    options: { preserveUploads?: boolean; preservePrompt?: boolean } = {},
-  ) => {
-    const nextPrompt = stored.prompt ?? '';
-    const currentPrompt = promptRef.current;
-    const currentRetryInterval = retryIntervalRef.current;
-    const currentRetryLimit = retryLimitRef.current;
-    const currentApiProfileId = apiProfileIdRef.current;
-    const shouldPreservePrompt =
-      options.preservePrompt ||
-      shouldPreservePromptInput(nextPrompt, currentPrompt);
-    const nextConcurrency = normalizeConcurrency(stored.concurrency, DEFAULT_CONCURRENCY);
-    const nextEnableSound = typeof stored.enableSound === 'boolean' ? stored.enableSound : true;
-    const nextRetryInterval = typeof stored.retryInterval === 'number' ? stored.retryInterval : 1000;
-    const nextRetryLimit = typeof stored.retryLimit === 'number' ? stored.retryLimit : -1;
-    const shouldPreserveRetryInterval =
-      shouldPreserveRetryIntervalInput(nextRetryInterval, currentRetryInterval);
-    const shouldPreserveRetryLimit =
-      shouldPreserveRetryLimitInput(nextRetryLimit, currentRetryLimit);
-    const nextApiProfileId = resolveTaskApiProfileId(stored.apiProfileId);
-    const storedUploads = Array.isArray(stored.uploads) ? stored.uploads : [];
-    const shouldPreserveApiProfile =
-      shouldPreserveApiProfileInput(nextApiProfileId, currentApiProfileId);
-    markTaskSynced({
-      prompt: nextPrompt,
-      concurrency: nextConcurrency,
-      enableSound: nextEnableSound,
-      retryInterval: nextRetryInterval,
-      retryLimit: nextRetryLimit,
-      apiProfileId: nextApiProfileId,
-      uploads: normalizeUploadsPayload(storedUploads),
-    });
-
-    if (!shouldPreserveApiProfile) {
-      apiProfileIdRef.current = nextApiProfileId;
-      clearApiProfileDirty();
-      setApiProfileId(nextApiProfileId);
-    } else if (nextApiProfileId === currentApiProfileId) {
-      clearApiProfileDirty();
-    }
-
-    if (!shouldPreservePrompt) {
-      promptRef.current = nextPrompt;
-      clearPromptDirty();
-      setPrompt(nextPrompt);
-    } else if (nextPrompt === currentPrompt) {
-      clearPromptDirty();
-    }
-    setConcurrency(nextConcurrency);
-    setConcurrencyInput(String(nextConcurrency));
-    setEnableSound(nextEnableSound);
-    if (!shouldPreserveRetryInterval) {
-      retryIntervalRef.current = nextRetryInterval;
-      clearRetryIntervalDirty();
-      setRetryInterval(nextRetryInterval);
-    } else if (nextRetryInterval === currentRetryInterval) {
-      clearRetryIntervalDirty();
-    }
-    if (!shouldPreserveRetryLimit) {
-      retryLimitRef.current = nextRetryLimit;
-      clearRetryLimitDirty();
-      setRetryLimit(nextRetryLimit);
-    } else if (nextRetryLimit === currentRetryLimit) {
-      clearRetryLimitDirty();
-    }
-    setStats({ ...DEFAULT_TASK_STATS, ...(stored.stats || {}) });
-
-    const storedResults = Array.isArray(stored.results) ? stored.results : [];
-    const previousResultIds = new Set(currentResultsRef.current.map((item) => item.id));
-    const hydratedResults = storedResults.map((item) => {
-      const normalized = normalizeStoredResult(item, true);
-      if (normalized.sourceUrl && normalized.sourceUrl.includes('/api/backend/image/')) {
-        normalized.sourceUrl = stripBackendToken(normalized.sourceUrl);
-      }
-      normalized.displayUrl = resolveBackendDisplayUrl(
-        normalized.localKey,
-        normalized.sourceUrl,
-      );
-      return normalized;
-    });
-    if (pendingBackendGenerateSnapshotRef.current) {
-      const newLoadingResults = hydratedResults.filter(
-        (item) =>
-          !previousResultIds.has(item.id) &&
-          (item.status === 'loading' || item.status === 'pending'),
-      );
-      if (newLoadingResults.length > 0) {
-        newLoadingResults.forEach((item) => {
-          requestContextByResultIdRef.current.set(
-            item.id,
-            pendingBackendGenerateSnapshotRef.current as CollectionRequestSnapshot,
-          );
-        });
-        pendingBackendGenerateSnapshotRef.current = null;
-      }
-    }
-    applyBackendResults(hydratedResults);
-
-    if (!options.preserveUploads) {
-      const hydratedUploads: UploadFileWithMeta[] = storedUploads.map((item) => {
-        const signature =
-          item.sourceSignature ||
-          buildUploadSignature({
-            uid: item.uid,
-            name: item.name,
-            size: item.size,
-            lastModified: item.lastModified,
-            type: item.type,
-          } as UploadFileWithMeta);
-        return {
-          uid: item.uid,
-          name: item.name,
-          status: 'done',
-          size: item.size,
-          type: item.type,
-          lastModified: item.lastModified,
-          localKey: item.localKey,
-          thumbUrl: item.localKey ? buildBackendImageUrl(item.localKey) : undefined,
-          fromCollection: item.fromCollection,
-          sourceSignature: signature || item.sourceSignature,
-        };
-      });
-      setFileList(hydratedUploads);
-    }
-  };
-
   useEffect(() => {
     let isActive = true;
     const hydrate = async () => {
-      if (backendMode) {
-        objectUrlMapRef.current.forEach((url) => URL.revokeObjectURL(url));
-        objectUrlMapRef.current.clear();
-        try {
-          const stored = await fetchBackendTask(id);
-          if (stored && isActive) {
-            applyBackendTaskState(stored);
-          }
-        } catch (err) {
-          console.warn('后端任务初始化失败:', err);
-        }
-        if (isActive) {
-          setHydrated(true);
-        }
-        return;
-      }
-
       const stored = loadTaskState(storageKey);
       if (stored) {
         setPrompt(stored.prompt ?? '');
@@ -534,7 +206,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
         const storedResults = Array.isArray(stored.results) ? stored.results : [];
         const hydratedResults: SubTaskResult[] = [];
         for (const item of storedResults) {
-          const normalized = normalizeStoredResult(item, false);
+          const normalized = normalizeStoredResult(item);
           if (normalized.localKey) {
             const blob = await getImageBlob(normalized.localKey);
             if (blob) {
@@ -604,7 +276,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
     return () => {
       isActive = false;
     };
-  }, [storageKey, backendMode, id]);
+  }, [storageKey, id]);
 
   useEffect(() => {
     promptRef.current = prompt;
@@ -641,7 +313,6 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
       abortControllersRef.current.forEach((controller: AbortController) => controller.abort());
       retryTimersRef.current.forEach((timerId: number) => clearTimeout(timerId));
       retryTimersRef.current.clear();
-      clearBackendTransitionTimer();
       objectUrlMapRef.current.forEach((url: string) => URL.revokeObjectURL(url));
       objectUrlMapRef.current.clear();
       taskStartTimesRef.current.clear();
@@ -649,7 +320,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
   }, []);
 
   useEffect(() => {
-    if (!hydrated || backendMode) return;
+    if (!hydrated) return;
     const payload: PersistedImageTaskState = {
       version: TASK_STATE_VERSION,
       prompt,
@@ -663,40 +334,12 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
       apiProfileId,
     };
     saveTaskState(storageKey, payload);
-  }, [prompt, concurrency, enableSound, retryInterval, retryLimit, results, stats, storageKey, hydrated, fileList, backendMode, apiProfileId]);
-
-  useEffect(() => {
-    if (!backendMode) return;
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent).detail as {
-        taskId?: string;
-        state?: PersistedImageTaskState;
-      };
-      if (!detail?.state || detail.taskId !== id) return;
-      const localUploads = normalizeUploadsPayload(serializeUploads(fileList));
-      const serverUploads = normalizeUploadsPayload(
-        Array.isArray(detail.state.uploads) ? detail.state.uploads : [],
-      );
-      const shouldPreserveUploads =
-        fileList.some((file) => !file.localKey) ||
-        JSON.stringify(localUploads) !== JSON.stringify(serverUploads);
-      applyBackendTaskState(detail.state, { preserveUploads: shouldPreserveUploads });
-    };
-    window.addEventListener('backend-task-update', handler as EventListener);
-    return () => {
-      window.removeEventListener('backend-task-update', handler as EventListener);
-    };
-  }, [backendMode, id, fileList]);
-
-  useEffect(() => {
-    if (!backendMode) return;
-    setIsGlobalLoading(results.some((result) => isResultActive(result)));
-  }, [backendMode, results]);
+  }, [prompt, concurrency, enableSound, retryInterval, retryLimit, results, stats, storageKey, hydrated, fileList, apiProfileId]);
 
   useEffect(() => {
     const previous = prevResultsRef.current;
     prevResultsRef.current = results;
-    if (!backendMode || !enableSound) return;
+    if (!enableSound) return;
     if (previous.length === 0) return;
     const previousStatus = new Map(previous.map((item) => [item.id, item.status]));
     const hasNewSuccess = results.some(
@@ -705,12 +348,11 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
     if (hasNewSuccess) {
       playSuccessSound();
     }
-  }, [results, backendMode, enableSound]);
+  }, [results, enableSound]);
 
   useEffect(() => {
     collectedCollectionKeysRef.current.clear();
     requestContextByResultIdRef.current.clear();
-    pendingBackendGenerateSnapshotRef.current = null;
   }, [id]);
 
   useEffect(() => {
@@ -725,35 +367,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
   }, [collectionRevision]);
 
   useEffect(() => {
-    if (!backendMode || !config.enableCollection || !onCollect) return;
-    results.forEach((result) => {
-      if (result.status !== 'success') return;
-      const endTime =
-        typeof result.endTime === 'number' ? result.endTime : result.startTime;
-      if (!endTime) return;
-      const collectionKey = buildResultCollectionKey(result.id, endTime);
-      if (collectedCollectionKeysRef.current.has(collectionKey)) return;
-      const snapshot = requestContextByResultIdRef.current.get(result.id);
-      if (!snapshot) return;
-      const requestPrompt = snapshot.prompt;
-      const resolvedSourceUrl =
-        resolveBackendDisplayUrl(result.localKey, result.sourceUrl) ||
-        result.displayUrl ||
-        result.sourceUrl;
-      void collectImageForCollection({
-        collectionKey,
-        sourceUrl: resolvedSourceUrl || undefined,
-        sourceLocalKey: result.localKey,
-        prompt: requestPrompt,
-        timestamp: endTime,
-        taskId: id,
-      });
-      collectReferenceImagesForCollection(snapshot);
-    });
-  }, [backendMode, config.enableCollection, onCollect, results, id]);
-
-  useEffect(() => {
-    if (!hydrated || backendMode) return;
+    if (!hydrated) return;
     let isActive = true;
     const persistUploads = async () => {
       const pending = fileList.filter(
@@ -777,7 +391,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
     return () => {
       isActive = false;
     };
-  }, [fileList, hydrated, backendMode]);
+  }, [fileList, hydrated]);
 
   useEffect(() => {
     const nextKeys = new Map<string, string>();
@@ -790,10 +404,8 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
       if (!nextKey) {
         clearObjectUrl(key);
         cachedUploadKeysRef.current.delete(key);
-        if (!backendMode) {
-          if (!isCollectionCacheKey(key)) {
-            void deleteImageBlob(key);
-          }
+        if (!isCollectionCacheKey(key)) {
+          void deleteImageBlob(key);
         }
         return;
       }
@@ -803,7 +415,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
       }
     });
     uploadKeysRef.current = nextKeys;
-  }, [fileList, backendMode]);
+  }, [fileList]);
 
   const playSuccessSound = () => {
     if (enableSound && audioRef.current) {
@@ -961,7 +573,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
     fileList.forEach((file) => {
       const uploadKey = file.uid || file.localKey;
       if (!uploadKey) return;
-      if (backendMode && !file.localKey) return;
+
       const signature = file.sourceSignature || buildUploadSignature(file);
       const sourceBlob = file.originFileObj as Blob | undefined;
       const sourceUrl = typeof file.thumbUrl === 'string' ? file.thumbUrl : undefined;
@@ -1071,22 +683,6 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
     if (!config.enableCollection || !onCollect) return;
     const dedupeKey = options.dedupeKey || options.collectionKey;
     if (collectedCollectionKeysRef.current.has(dedupeKey)) return;
-
-    if (backendMode) {
-      const backendLocalKey =
-        options.sourceLocalKey || extractBackendImageKey(options.sourceUrl);
-      if (!backendLocalKey) return;
-      collectedCollectionKeysRef.current.add(dedupeKey);
-      onCollect({
-        id: options.collectionKey,
-        prompt: options.prompt,
-        timestamp: options.timestamp,
-        taskId: options.taskId,
-        localKey: backendLocalKey,
-        sourceSignature: options.sourceSignature,
-      });
-      return;
-    }
 
     collectedCollectionKeysRef.current.add(dedupeKey);
     let blob: Blob | null = null;
@@ -1527,36 +1123,11 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
   };
 
   const getPreferredImageSrc = (result: SubTaskResult) => {
-    if (backendMode) {
-      return result.displayUrl || result.sourceUrl;
-    }
     const sourceUrl = result.sourceUrl;
     if (sourceUrl && (/^https?:\/\//i.test(sourceUrl) || sourceUrl.startsWith('data:image'))) {
       return sourceUrl;
     }
     return result.displayUrl || sourceUrl;
-  };
-
-  const saveImageToProject = async (result: SubTaskResult) => {
-    const imageUrl = getPreferredImageSrc(result);
-    if (!imageUrl || result.savedLocal) return;
-    try {
-      const response = await fetch(imageUrl);
-      if (!response.ok) return;
-      const blob = await response.blob();
-      const saveResponse = await fetch('/api/save-image', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'X-Image-Type': blob.type || 'application/octet-stream',
-        },
-        body: blob,
-      });
-      if (!saveResponse.ok) return;
-      updateResult(result.id, { savedLocal: true });
-    } catch (err) {
-      console.warn('保存到项目目录失败:', err);
-    }
   };
 
   const updateResult = (id: string, updates: Partial<SubTaskResult>) => {
@@ -1625,34 +1196,6 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
       message.warning('请输入提示词或上传参考图');
       return;
     }
-    if (backendMode) {
-      if (fileList.some((file) => !file.localKey)) {
-        message.warning('图片正在上传，请稍后再试');
-        return;
-      }
-      setIsGlobalLoading(true);
-      const requestSnapshot = buildCollectionRequestSnapshot(prompt);
-      try {
-        await patchBackendTask(id, {
-          prompt,
-          concurrency,
-          enableSound,
-          retryInterval,
-          retryLimit,
-          apiProfileId,
-          uploads: serializeUploads(fileList),
-        });
-        pendingBackendGenerateSnapshotRef.current = requestSnapshot;
-        await generateBackendTask(id);
-      } catch (err) {
-        pendingBackendGenerateSnapshotRef.current = null;
-        setIsGlobalLoading(false);
-        console.error(err);
-        message.error(formatUnknownErrorMessage(err, '后端生成失败，请检查服务状态'));
-      }
-      return;
-    }
-
     results.forEach((task) => {
       abortSubTaskRequest(task.id);
       clearRetryTimer(task.id);
@@ -1691,36 +1234,6 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
   };
 
   const handleRetrySingle = (subTaskId: string) => {
-    if (backendMode) {
-      requestContextByResultIdRef.current.set(
-        subTaskId,
-        buildCollectionRequestSnapshot(prompt),
-      );
-      clearBackendTransitionTimer(subTaskId);
-      updateResult(subTaskId, {
-        status: 'loading',
-        error: undefined,
-        autoRetry: true,
-        displayUrl: undefined,
-        localKey: undefined,
-        sourceUrl: undefined,
-        savedLocal: false,
-        startTime: Date.now(),
-        endTime: undefined,
-        duration: undefined,
-      });
-      void retryBackendSubTask(id, subTaskId)
-        .catch((err) => {
-          updateResult(subTaskId, {
-            status: 'error',
-            error: formatUnknownErrorMessage(err, '后端重试失败'),
-            autoRetry: false,
-          });
-          console.error(err);
-          message.error(formatUnknownErrorMessage(err, '后端重试失败'));
-        });
-      return;
-    }
     clearRetryTimer(subTaskId);
     updateResult(subTaskId, { status: 'loading', error: undefined, autoRetry: true, displayUrl: undefined, localKey: undefined, sourceUrl: undefined, savedLocal: false, startTime: Date.now() });
     taskStartTimesRef.current.set(subTaskId, Date.now());
@@ -1729,16 +1242,6 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
   };
 
   const handleStopSingle = (subTaskId: string) => {
-    if (backendMode) {
-      clearBackendTransitionTimer(subTaskId);
-      updateResult(subTaskId, { status: 'error', error: '已暂停重试', autoRetry: false });
-      void stopBackendSubTask(id, subTaskId, 'pause')
-        .catch((err) => {
-          console.error(err);
-          message.error(formatUnknownErrorMessage(err, '后端停止失败'));
-        });
-      return;
-    }
     isRetryingRef.current.set(subTaskId, false);
     // 不 abort 请求，让它自然完成或失败，但停止重试
     // 如果需要强制停止请求，可以调用 abortControllersRef.current.get(subTaskId)?.abort();
@@ -1748,7 +1251,6 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
   };
 
   const performRequest = async (subTaskId: string) => {
-    if (backendMode) return;
     if (abortControllersRef.current.has(subTaskId)) {
       return;
     }
@@ -1983,29 +1485,6 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
   };
 
   const handleStopAll = () => {
-    if (backendMode) {
-      clearBackendTransitionTimer();
-      setResults((prev) => {
-        const updated = prev.map<SubTaskResult>((item) => {
-          if (!isResultActive(item)) return item;
-          return {
-            ...item,
-            status: 'error',
-            error: '已停止',
-            autoRetry: false,
-            endTime: Date.now(),
-          };
-        });
-        currentResultsRef.current = updated;
-        return updated;
-      });
-      void stopBackendSubTask(id, undefined, 'abort')
-        .catch((err) => {
-          console.error(err);
-          message.error(formatUnknownErrorMessage(err, '后端停止失败'));
-        });
-      return;
-    }
     results.forEach((result) => {
       isRetryingRef.current.set(result.id, false);
       clearRetryTimer(result.id);
@@ -2080,7 +1559,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
       if (file.originFileObj && !next.originFileObj) {
         next.originFileObj = file.originFileObj;
       }
-      if (!next.localKey && !backendMode) {
+      if (!next.localKey) {
         next.localKey = buildUploadKey(next.uid);
       }
       if (!next.thumbUrl && next.originFileObj) {
@@ -2106,44 +1585,6 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
       return next;
     });
     setFileList(normalized);
-
-    if (!backendMode) return;
-    const pending = normalized.filter(
-      (file) => file.originFileObj && !file.localKey,
-    );
-    if (pending.length === 0) return;
-
-    void (async () => {
-      for (const file of pending) {
-        try {
-          const { key } = await uploadBackendImage(file.originFileObj as File, {
-            name: file.name,
-            lastModified: file.lastModified ?? file.originFileObj?.lastModified,
-          });
-          const stillPresent = fileListRef.current.some((item) => item.uid === file.uid);
-          if (!stillPresent) {
-            void cleanupBackendImages([key]).catch((err) => {
-              console.warn('后端参考图清理失败:', err);
-            });
-            continue;
-          }
-          setFileList((prev) =>
-            prev.map((item) =>
-              item.uid === file.uid
-                ? {
-                    ...item,
-                    localKey: key,
-                    thumbUrl: buildBackendImageUrl(key),
-                  }
-                : item,
-            ),
-          );
-        } catch (err) {
-          console.error(err);
-          message.error(`上传失败: ${file.name}`);
-        }
-      }
-    })();
   };
 
   const successRate = calculateSuccessRate(
@@ -2736,9 +2177,6 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, backendMo
                                   <a
                                     href={imageSrc}
                                     download={`image-${result.id}.png`}
-                                    onClick={() => {
-                                      void saveImageToProject(result);
-                                    }}
                                     style={{ color: 'inherit', display: 'flex' }}
                                   >
                                     <DownloadOutlined />

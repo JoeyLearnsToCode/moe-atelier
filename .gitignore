@@ -3,3 +3,4 @@ saved-images/
 server-data/
 .env
 .claude/
+dist/*
