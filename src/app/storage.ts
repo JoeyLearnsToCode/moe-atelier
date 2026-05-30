@@ -100,7 +100,7 @@ const DEFAULT_CONFIG: AppConfig = {
   ...DEFAULT_FORMAT_CONFIGS.openai,
   apiFormat: 'openai',
   stream: false,
-  enableCollection: false,
+  enableCollection: true,
 };
 
 const DEFAULT_GLOBAL_STATS: GlobalStats = {

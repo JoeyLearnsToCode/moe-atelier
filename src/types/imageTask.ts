@@ -40,6 +40,22 @@ export interface PersistedUploadImage {
   sourceSignature?: string;
 }
 
+export interface PersistedGeneratedImage {
+  id: string;
+  localKey?: string;
+  sourceUrl?: string;
+  timestamp: number;
+}
+
+export interface GeneratedImageEntry {
+  id: string;
+  displayUrl: string;
+  localKey?: string;
+  sourceUrl?: string;
+  timestamp: number;
+  duration?: number;
+}
+
 export interface PersistedImageTaskState {
   version: number;
   prompt: string;
@@ -47,8 +63,10 @@ export interface PersistedImageTaskState {
   enableSound: boolean;
   retryInterval?: number;
   retryLimit?: number;
+  generationCount?: number;
   results: PersistedSubTaskResult[];
   uploads?: PersistedUploadImage[];
+  generatedImages?: PersistedGeneratedImage[];
   stats: TaskStats;
   apiProfileId?: string;
 }

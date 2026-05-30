@@ -983,3 +983,35 @@ h1, h2, h3, h4, h5, h6, .ant-typography {
 .api-select-dot-running {
   animation: api-dot-blink 1s infinite !important;
 }
+
+.generated-gallery {
+  display: flex;
+  gap: 16px;
+  padding: 16px 4px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.generated-gallery > .generated-paper {
+  scroll-snap-align: start;
+  flex-shrink: 0;
+  width: 72%;
+  max-width: 280px;
+}
+
+.generated-paper {
+  animation: none;
+}
+
+.generation-progress {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+}
+
+.generation-progress-text {
+  font-size: 12px;
+}
