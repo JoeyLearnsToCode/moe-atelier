@@ -23,6 +23,7 @@ import type { AppConfig, TaskConfig } from './types/app';
 import type { CollectionItem } from './types/collection';
 import type { GlobalStats } from './types/stats';
 import type { PersistedUploadImage } from './types/imageTask';
+import type { LogEntry } from './types/log';
 import {
   cleanupTaskCache,
   cleanupUnusedImageCache,
@@ -69,6 +70,7 @@ function App() {
   const [collectedItems, setCollectedItems] = useState<CollectionItem[]>(() => loadCollectionItems());
   const [collectionRevision, setCollectionRevision] = useState(0);
   const [promptDrawerVisible, setPromptDrawerVisible] = useState(false);
+  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [models, setModels] = useState<{label: string, value: string}[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [form] = Form.useForm();
@@ -522,6 +524,10 @@ function App() {
     setCollectedItems([]);
   };
 
+  const handleLog = useCallback((entry: LogEntry) => {
+    setLogEntries(prev => [entry, ...prev].slice(0, 30));
+  }, []);
+
   const updateGlobalStats = useCallback((type: 'request' | 'success' | 'fail', duration?: number) => {
     setGlobalStats((prev: GlobalStats) => {
       const newState = {
@@ -823,6 +829,8 @@ function App() {
             onRemoveTask={handleRemoveTask}
             onStatsUpdate={updateGlobalStats}
             onCollect={handleCollect}
+            onLog={handleLog}
+            logEntries={logEntries}
             onReorder={handleReorderTasks}
           />
         </Content>

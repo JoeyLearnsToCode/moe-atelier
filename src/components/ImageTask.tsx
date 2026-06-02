@@ -28,6 +28,7 @@ import type {
   GeneratedImageEntry,
 } from '../types/imageTask';
 import type { CollectionItem } from '../types/collection';
+import type { LogEntry } from '../types/log';
 import { DEFAULT_TASK_STATS, loadTaskState, saveTaskState, serializeResults, TASK_STATE_VERSION } from './imageTaskState';
 import { getBase64 } from '../utils/file';
 import { parseMarkdownImage, resolveImageFromResponse } from '../utils/imageResponse';
@@ -58,6 +59,7 @@ interface ImageTaskProps {
   onRemove: () => void;
   onStatsUpdate: (type: 'request' | 'success' | 'fail', duration?: number) => void;
   onCollect?: (item: CollectionItem) => void;
+  onLog?: (entry: LogEntry) => void;
   collectionRevision?: number;
   dragAttributes?: any;
   dragListeners?: any;
@@ -129,7 +131,7 @@ const normalizeConcurrency = (value: unknown, fallback = DEFAULT_CONCURRENCY) =>
 const isResultActive = (result?: Pick<SubTaskResult, 'status' | 'autoRetry'> | null) =>
   Boolean(result && (result.status === 'loading' || result.autoRetry));
 
-const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove, onStatsUpdate, onCollect, collectionRevision, dragAttributes, dragListeners }: ImageTaskProps) => {
+const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove, onStatsUpdate, onCollect, onLog, collectionRevision, dragAttributes, dragListeners }: ImageTaskProps) => {
   const [prompt, setPrompt] = useState('');
   const promptRef = useRef(prompt);
   const promptFocusedRef = useRef(false);
@@ -1555,6 +1557,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
 
       console.error('Generation error:', err);
       const errorMessage = formatUnknownErrorMessage(err, '未知错误');
+      onLog?.({ id: uuidv4(), taskId: id, message: errorMessage, timestamp: Date.now() });
       updateStats('fail');
       
       const shouldRetry = isRetryingRef.current.get(subTaskId);

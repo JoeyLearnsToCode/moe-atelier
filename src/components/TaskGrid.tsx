@@ -25,8 +25,10 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import ImageTask from './ImageTask';
+import LogCard from './LogCard';
 import type { AppConfig, TaskConfig } from '../types/app';
 import type { CollectionItem } from '../types/collection';
+import type { LogEntry } from '../types/log';
 import { getTaskStorageKey } from '../app/storage';
 
 interface TaskGridProps {
@@ -36,6 +38,8 @@ interface TaskGridProps {
   onRemoveTask: (id: string) => void;
   onStatsUpdate: (type: 'request' | 'success' | 'fail', duration?: number) => void;
   onCollect: (item: CollectionItem) => void;
+  onLog?: (entry: LogEntry) => void;
+  logEntries: LogEntry[];
   onReorder: (nextTasks: TaskConfig[]) => void;
 }
 
@@ -45,6 +49,7 @@ interface SortableTaskItemProps {
   onRemove: (id: string) => void;
   onStatsUpdate: (type: 'request' | 'success' | 'fail', duration?: number) => void;
   onCollect: (item: CollectionItem) => void;
+  onLog?: (entry: LogEntry) => void;
   collectionRevision: number;
 }
 
@@ -57,6 +62,7 @@ const SortableTaskItem = ({
   onRemove,
   onStatsUpdate,
   onCollect,
+  onLog,
   collectionRevision,
 }: SortableTaskItemProps) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -82,6 +88,7 @@ const SortableTaskItem = ({
           onRemove={() => onRemove(task.id)}
           onStatsUpdate={onStatsUpdate}
           onCollect={onCollect}
+          onLog={onLog}
           collectionRevision={collectionRevision}
           dragAttributes={attributes}
           dragListeners={listeners}
@@ -98,6 +105,8 @@ const TaskGrid: React.FC<TaskGridProps> = ({
   onRemoveTask,
   onStatsUpdate,
   onCollect,
+  onLog,
+  logEntries,
   onReorder,
 }) => {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -192,11 +201,19 @@ const TaskGrid: React.FC<TaskGridProps> = ({
               onRemove={onRemoveTask}
               onStatsUpdate={onStatsUpdate}
               onCollect={onCollect}
+              onLog={onLog}
               collectionRevision={collectionRevision}
             />
           ))}
         </Row>
       </SortableContext>
+      <Row gutter={[24, 24]} style={{ marginTop: 24 }}>
+        <Col xs={24} sm={12} xl={8}>
+          <div className="fade-in-up" style={{ height: '100%' }}>
+            <LogCard entries={logEntries} />
+          </div>
+        </Col>
+      </Row>
       <DragOverlay dropAnimation={dropAnimation}>
         {activeId ? (
           <div

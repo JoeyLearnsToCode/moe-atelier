@@ -21,4 +21,7 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: pages deploy dist --project-name=moe-atelier
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "3.90.0"
+          command: pages deploy dist --project-name=moe-atelier --branch main
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
