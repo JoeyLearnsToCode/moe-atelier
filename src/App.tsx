@@ -31,6 +31,7 @@ import {
   getTaskStorageKey,
   loadCollectionItems,
   loadConfig,
+  saveCollectionItems,
   loadFormatConfig,
   loadGlobalStats,
   loadTasks,
@@ -125,6 +126,10 @@ function App() {
       'app cache',
     );
   }, [globalStats]);
+
+  React.useEffect(() => {
+    saveCollectionItems(collectedItems);
+  }, [collectedItems]);
 
   const fetchModels = async () => {
     const currentConfig = form.getFieldsValue();
