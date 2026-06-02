@@ -2111,7 +2111,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
         padding: '0 16px 16px',
         minHeight: 200
       }}>
-        {results.length === 0 ? (
+        {results.length === 0 && generatedImages.length === 0 ? (
           <div style={{ 
             height: '100%', 
             display: 'flex', 
@@ -2127,7 +2127,160 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
           </div>
         ) : (
           <Image.PreviewGroup>
-            {generatedImages.length > 0 ? (
+            {results.length > 0 && (
+              <div className="mobile-compact-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {results.map((result: SubTaskResult) => {
+                  const imageSrc = getPreferredImageSrc(result);
+                  return (
+                    <div key={result.id} className="polaroid-printer">
+                      <div className="polaroid-slot-outer">
+                        <div className="polaroid-slot-inner"></div>
+                      </div>
+                      <div className="polaroid-paper-container">
+                        {result.status === 'loading' ? (
+                          <div style={{ textAlign: 'center', padding: '40px 8px', marginTop: 20, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                            <Space direction="vertical" size={8}>
+                              <Spin indicator={<LoadingOutlined style={{ fontSize: 24, color: '#FF9EB5' }} spin />} />
+                              <Text type="secondary" style={{ fontSize: 10, fontWeight: 600 }}>
+                                {result.retryCount > 0 ? `重试 (${result.retryCount})...` : '生成中...'}
+                              </Text>
+                            </Space>
+                            <div style={{ marginTop: 12 }}>
+                              <Button
+                                type="text"
+                                size="small"
+                                danger
+                                icon={<PauseCircleFilled />}
+                                onClick={() => handleStopSingle(result.id)}
+                                style={{ background: 'rgba(255,255,255,0.8)', borderRadius: '50%', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(255,82,82,0.2)' }}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div id={`paper-${result.id}`} key={`paper-${result.id}-${result.retryCount || 0}`} className={`polaroid-paper ${result.status === 'error' ? 'error-state' : ''}`}>
+                            <div style={{
+                              position: 'relative',
+                              paddingTop: '114.28%',
+                              background: result.status === 'error' ? '#FFD1DC' : '#000',
+                              width: '100%',
+                              overflow: 'hidden',
+                              boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.1)'
+                            }}>
+                              <div style={{
+                                position: 'absolute',
+                                top: 0, left: 0, right: 0, bottom: 0,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}>
+                                {result.status === 'success' && imageSrc ? (
+                                  <>
+                                    <Image
+                                      src={imageSrc}
+                                      alt="Generated"
+                                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                      wrapperStyle={{ width: '100%', height: '100%' }}
+                                    />
+                                    {result.duration && (
+                                      <div style={{
+                                        position: 'absolute',
+                                        bottom: 4,
+                                        right: 4,
+                                        color: 'rgba(255,255,255,0.9)',
+                                        fontSize: '11px',
+                                        fontFamily: 'monospace',
+                                        textShadow: '1px 1px 0 rgba(0,0,0,0.8), -1px -1px 0 rgba(0,0,0,0.8), 1px -1px 0 rgba(0,0,0,0.8), -1px 1px 0 rgba(0,0,0,0.8), 0px 2px 4px rgba(0,0,0,0.5)',
+                                        zIndex: 1,
+                                        pointerEvents: 'none',
+                                        letterSpacing: '0.5px',
+                                        fontWeight: 600
+                                      }}>
+                                        {formatDuration(result.duration)}
+                                      </div>
+                                    )}
+                                  </>
+                                ) : (
+                                  <div style={{ textAlign: 'center', padding: 16 }}>
+                                    <CloseCircleFilled style={{ fontSize: 32, color: '#FF5252', marginBottom: 8 }} />
+                                    <div style={{ color: '#FF5252', fontSize: 12, fontWeight: 600, wordBreak: 'break-word', maxHeight: 80, overflow: 'auto' }}>
+                                      {result.error || '生成失败'}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{
+                              marginTop: 8,
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              height: 24,
+                              padding: '0 2px'
+                            }}>
+                              <Text style={{
+                                fontSize: 12,
+                                fontFamily: "'ZCOOL KuaiLe', cursive",
+                                color: '#998888',
+                                letterSpacing: '1px',
+                                lineHeight: 1
+                              }}>
+                                moe atelier
+                              </Text>
+                              <div style={{ display: 'flex', gap: 8, zIndex: 11, alignItems: 'center' }}>
+                                {result.status === 'error' && result.autoRetry && (
+                                  <div style={{
+                                    color: '#FF5252', fontSize: 14, cursor: 'pointer', transition: 'all 0.2s',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                  }}
+                                  className="hover-scale"
+                                  onClick={() => handleStopSingle(result.id)}
+                                  >
+                                    <PauseCircleFilled />
+                                  </div>
+                                )}
+                                <div style={{
+                                  color: '#998888', fontSize: 14, cursor: 'pointer', transition: 'all 0.2s',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}
+                                className="hover-scale"
+                                onClick={(e) => {
+                                  const paperEl = e.currentTarget.closest('.polaroid-paper');
+                                  if (paperEl) {
+                                    paperEl.classList.add('polaroid-dropping');
+                                    setTimeout(() => handleRetrySingle(result.id), 300);
+                                  } else {
+                                    handleRetrySingle(result.id);
+                                  }
+                                }}
+                                >
+                                  {result.status === 'error' && result.error === '已暂停重试' ?
+                                    <PlayCircleFilled /> : <ReloadOutlined />
+                                  }
+                                </div>
+                                {result.status === 'success' && imageSrc && (
+                                  <div style={{
+                                    color: '#998888', fontSize: 14, cursor: 'pointer', transition: 'all 0.2s',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                  }}
+                                  className="hover-scale"
+                                  >
+                                    <a href={imageSrc} download={`image-${result.id}.png`}
+                                      style={{ color: 'inherit', display: 'flex' }}>
+                                      <DownloadOutlined />
+                                    </a>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {generatedImages.length > 0 && (
               <>
                 {isGlobalLoading && (
                   <div className="generation-progress">
@@ -2191,152 +2344,6 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                   ))}
                 </div>
               </>
-            ) : isGlobalLoading ? (
-              <div style={{ textAlign: 'center', padding: '60px 16px' }}>
-                <Space direction="vertical" size={16}>
-                  <Spin indicator={<LoadingOutlined style={{ fontSize: 32, color: '#FF9EB5' }} spin />} />
-                  <Text type="secondary" style={{ fontSize: 13, fontWeight: 600 }}>正在出图...</Text>
-                </Space>
-              </div>
-            ) : results.some(r => r.status === 'success' || r.status === 'error') ? (
-              <div className="mobile-compact-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                {results.map((result: SubTaskResult) => {
-                  const imageSrc = getPreferredImageSrc(result);
-                  return (
-                    <div key={result.id} className="polaroid-printer">
-                      <div className="polaroid-slot-outer">
-                        <div className="polaroid-slot-inner"></div>
-                      </div>
-                      <div className="polaroid-paper-container">
-                        <div id={`paper-${result.id}`} key={`paper-${result.id}-${result.retryCount || 0}`} className={`polaroid-paper ${result.status === 'error' ? 'error-state' : ''}`}>
-                          <div style={{
-                            position: 'relative',
-                            paddingTop: '114.28%',
-                            background: result.status === 'error' ? '#FFD1DC' : '#000',
-                            width: '100%',
-                            overflow: 'hidden',
-                            boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.1)'
-                          }}>
-                            <div style={{
-                              position: 'absolute',
-                              top: 0, left: 0, right: 0, bottom: 0,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center'
-                            }}>
-                              {result.status === 'success' && imageSrc ? (
-                                <>
-                                  <Image
-                                    src={imageSrc}
-                                    alt="Generated"
-                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                    wrapperStyle={{ width: '100%', height: '100%' }}
-                                  />
-                                  {result.duration && (
-                                    <div style={{
-                                      position: 'absolute',
-                                      bottom: 4,
-                                      right: 4,
-                                      color: 'rgba(255,255,255,0.9)',
-                                      fontSize: '11px',
-                                      fontFamily: 'monospace',
-                                      textShadow: '1px 1px 0 rgba(0,0,0,0.8), -1px -1px 0 rgba(0,0,0,0.8), 1px -1px 0 rgba(0,0,0,0.8), -1px 1px 0 rgba(0,0,0,0.8), 0px 2px 4px rgba(0,0,0,0.5)',
-                                      zIndex: 1,
-                                      pointerEvents: 'none',
-                                      letterSpacing: '0.5px',
-                                      fontWeight: 600
-                                    }}>
-                                      {formatDuration(result.duration)}
-                                    </div>
-                                  )}
-                                </>
-                              ) : (
-                                <div style={{ textAlign: 'center', padding: 16 }}>
-                                  <CloseCircleFilled style={{ fontSize: 32, color: '#FF5252', marginBottom: 8 }} />
-                                  <div style={{ color: '#FF5252', fontSize: 12, fontWeight: 600, wordBreak: 'break-word', maxHeight: 80, overflow: 'auto' }}>
-                                    {result.error || '生成失败'}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          <div style={{
-                            marginTop: 8,
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            height: 24,
-                            padding: '0 2px'
-                          }}>
-                            <Text style={{
-                              fontSize: 12,
-                              fontFamily: "'ZCOOL KuaiLe', cursive",
-                              color: '#998888',
-                              letterSpacing: '1px',
-                              lineHeight: 1
-                            }}>
-                              moe atelier
-                            </Text>
-                            <div style={{ display: 'flex', gap: 8, zIndex: 11, alignItems: 'center' }}>
-                              {result.status === 'error' && result.autoRetry && (
-                                <div style={{
-                                  color: '#FF5252', fontSize: 14, cursor: 'pointer', transition: 'all 0.2s',
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                }}
-                                className="hover-scale"
-                                onClick={() => handleStopSingle(result.id)}
-                                >
-                                  <PauseCircleFilled />
-                                </div>
-                              )}
-                              <div style={{
-                                color: '#998888', fontSize: 14, cursor: 'pointer', transition: 'all 0.2s',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center'
-                              }}
-                              className="hover-scale"
-                              onClick={(e) => {
-                                const paperEl = e.currentTarget.closest('.polaroid-paper');
-                                if (paperEl) {
-                                  paperEl.classList.add('polaroid-dropping');
-                                  setTimeout(() => handleRetrySingle(result.id), 300);
-                                } else {
-                                  handleRetrySingle(result.id);
-                                }
-                              }}
-                              >
-                                {result.status === 'error' && result.error === '已暂停重试' ?
-                                  <PlayCircleFilled /> : <ReloadOutlined />
-                                }
-                              </div>
-                              {result.status === 'success' && imageSrc && (
-                                <div style={{
-                                  color: '#998888', fontSize: 14, cursor: 'pointer', transition: 'all 0.2s',
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                }}
-                                className="hover-scale"
-                                >
-                                  <a href={imageSrc} download={`image-${result.id}.png`}
-                                    style={{ color: 'inherit', display: 'flex' }}>
-                                    <DownloadOutlined />
-                                  </a>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div style={{
-                height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexDirection: 'column', gap: 12, color: '#D0C0C0', padding: '40px 0'
-              }}>
-                <StarFilled style={{ fontSize: 32, color: '#FFE5A0' }} />
-                <Text type="secondary" style={{ fontSize: 13 }}>准备好开始创作了吗？</Text>
-              </div>
             )}
           </Image.PreviewGroup>
         )}
