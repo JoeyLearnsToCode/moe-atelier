@@ -97,6 +97,18 @@ function App() {
   }, [collectedItems.length]);
 
   React.useEffect(() => {
+    if (!collectionVisible) return;
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.collection-drawer')) {
+        setCollectionVisible(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [collectionVisible]);
+
+  React.useEffect(() => {
     if (config.enableCollection) return;
     const keepKeys = collectTaskImageKeys(tasks.map((task) => task.id));
     void cleanupUnusedImageCache(keepKeys);

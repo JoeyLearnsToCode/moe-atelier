@@ -152,6 +152,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
   const [results, setResults] = useState<SubTaskResult[]>([]);
   const [generatedImages, setGeneratedImages] = useState<GeneratedImageEntry[]>([]);
   const [isGlobalLoading, setIsGlobalLoading] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
   const [stats, setStats] = useState<TaskStats>({ ...DEFAULT_TASK_STATS });
   const [hydrated, setHydrated] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -172,6 +173,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
   const requestContextByResultIdRef = useRef<Map<string, CollectionRequestSnapshot>>(new Map());
   const lastCollectionRevisionRef = useRef(collectionRevision);
   const retrySettingsRef = useRef({ interval: retryInterval, limit: retryLimit });
+  const generateStartTimeRef = useRef(0);
   useEffect(() => {
     retrySettingsRef.current = { interval: retryInterval, limit: retryLimit };
   }, [retryInterval, retryLimit]);
@@ -400,6 +402,20 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
       playSuccessSound();
     }
   }, [results, enableSound]);
+
+  useEffect(() => {
+    if (!isGlobalLoading) {
+      setElapsedMs(0);
+      return;
+    }
+    const update = () => {
+      const t = generateStartTimeRef.current;
+      if (t > 0) setElapsedMs(Date.now() - t);
+    };
+    update();
+    const id = setInterval(update, 5000);
+    return () => clearInterval(id);
+  }, [isGlobalLoading]);
 
   useEffect(() => {
     collectedCollectionKeysRef.current.clear();
@@ -1268,6 +1284,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
     setGeneratedImages([]);
 
     const startTime = Date.now();
+    generateStartTimeRef.current = startTime;
     const tasksToReuse = results.slice(0, concurrency);
     const numNewTasks = Math.max(0, concurrency - tasksToReuse.length);
     
@@ -1574,6 +1591,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
         const timerId = window.setTimeout(() => {
           clearRetryTimer(subTaskId);
           if (isRetryingRef.current.get(subTaskId)) { 
+            updateResult(subTaskId, { status: 'loading', error: undefined, autoRetry: true });
             performRequest(subTaskId);
           } else {
             updateResult(subTaskId, { status: 'error', error: '已暂停重试', autoRetry: false });
@@ -2144,6 +2162,11 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                               <Text type="secondary" style={{ fontSize: 10, fontWeight: 600 }}>
                                 {result.retryCount > 0 ? `重试 (${result.retryCount})...` : '生成中...'}
                               </Text>
+                              {elapsedMs > 0 && (
+                                <Text type="secondary" style={{ fontSize: 10 }}>
+                                  已用 {formatDuration(elapsedMs)}
+                                </Text>
+                              )}
                             </Space>
                             <div style={{ marginTop: 12 }}>
                               <Button
