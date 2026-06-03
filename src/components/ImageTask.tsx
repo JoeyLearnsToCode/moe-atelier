@@ -1643,6 +1643,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
       },
     );
     message.info('已停止所有请求');
+    setIsGlobalLoading(false);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
