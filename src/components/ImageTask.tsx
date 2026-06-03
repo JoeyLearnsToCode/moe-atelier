@@ -1344,6 +1344,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
       const apiFormat = profile.apiFormat || 'openai';
       const hasImage = fileList.length > 0;
       let imageUrl: string | null = null;
+      let rawResponse: string | undefined;
 
       if (apiFormat === 'openai') {
         const apiUrl = resolveApiUrl(profile.apiUrl, 'openai');
@@ -1438,6 +1439,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
           if (pending) {
             consumeLine(pending);
           }
+          rawResponse = generatedText;
           imageUrl = parseMarkdownImage(generatedText);
         } else {
           const response = await axios.post(
@@ -1445,6 +1447,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
             { model: profile.model, messages, stream: false },
             { headers: { ...headers, 'Content-Type': 'application/json' }, signal: controller.signal }
           );
+          rawResponse = JSON.stringify(response.data);
           imageUrl = resolveImageFromResponse(response.data);
         }
       } else {
@@ -1463,6 +1466,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
           );
         }
         const data = config.stream ? await readGeminiStream(response) : await response.json();
+        rawResponse = JSON.stringify(data);
         imageUrl = resolveImageFromResponse(data);
       }
       
@@ -1548,7 +1552,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
           retryTimersRef.current.set(subTaskId, timerId);
         }
       } else {
-        throw new Error('未在响应中找到图片数据');
+        throw new Error('未在响应中找到图片数据。响应原文：\n' + (rawResponse || ''));
       }
 
     } catch (err: any) {
