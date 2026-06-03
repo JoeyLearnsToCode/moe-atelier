@@ -298,6 +298,7 @@ export const saveConfig = (config: AppConfig) => {
     apiFormat: config.apiFormat,
     stream: config.stream,
     enableCollection: config.enableCollection,
+    privacyMode: config.privacyMode,
     apiProfiles: config.apiProfiles,
     activeApiProfileId: config.activeApiProfileId,
   };
