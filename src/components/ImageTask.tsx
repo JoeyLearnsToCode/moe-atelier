@@ -176,6 +176,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
   const requestContextByResultIdRef = useRef<Map<string, CollectionRequestSnapshot>>(new Map());
   const lastCollectionRevisionRef = useRef(collectionRevision);
   const retrySettingsRef = useRef({ interval: retryInterval, limit: retryLimit });
+  const generationEpochRef = useRef(0);
   useEffect(() => {
     retrySettingsRef.current = { interval: retryInterval, limit: retryLimit };
   }, [retryInterval, retryLimit]);
@@ -1267,8 +1268,9 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
       message.warning('请输入提示词或上传参考图');
       return;
     }
+    generationEpochRef.current += 1;
+
     results.forEach((task) => {
-      abortSubTaskRequest(task.id);
       clearRetryTimer(task.id);
       clearObjectUrl(task.id);
       isRetryingRef.current.delete(task.id);
@@ -1320,11 +1322,9 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
 
   const handleStopSingle = (subTaskId: string) => {
     isRetryingRef.current.set(subTaskId, false);
-    // 不 abort 请求，让它自然完成或失败，但停止重试
-    // 如果需要强制停止请求，可以调用 abortControllersRef.current.get(subTaskId)?.abort();
-    // 根据需求：停止新的请求，如果有图返回还是要显示的。所以不 abort。
-    // 更新状态显示为“暂停重试”
-    updateResult(subTaskId, { status: 'error', error: '已暂停重试', autoRetry: false });
+    abortSubTaskRequest(subTaskId);
+    clearRetryTimer(subTaskId);
+    updateResult(subTaskId, { status: 'error', error: '已停止', autoRetry: false });
   };
 
   const performRequest = async (subTaskId: string) => {
@@ -1335,6 +1335,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
     abortControllersRef.current.set(subTaskId, controller);
     updateStats('request');
     const startTime = taskStartTimesRef.current.get(subTaskId) || Date.now();
+    const requestEpoch = generationEpochRef.current;
     const requestSnapshot = buildCollectionRequestSnapshot(prompt);
     requestContextByResultIdRef.current.set(subTaskId, requestSnapshot);
 
@@ -1466,6 +1467,8 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
       }
       
       if (imageUrl) {
+        if (generationEpochRef.current !== requestEpoch) return;
+
         const currentTask = currentResultsRef.current.find(r => r.id === subTaskId);
         if (currentTask?.status === 'error') {
           const paperEl = document.getElementById(`paper-${subTaskId}`);
@@ -1510,7 +1513,6 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
           taskDoneRef.current = true;
           currentResultsRef.current.forEach(r => {
             if (r.id !== subTaskId && (r.status === 'loading' || r.autoRetry)) {
-              abortSubTaskRequest(r.id);
               clearRetryTimer(r.id);
               isRetryingRef.current.set(r.id, false);
             }
@@ -1553,6 +1555,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
       if (axios.isCancel(err) || err.name === 'AbortError') {
         return;
       }
+      if (generationEpochRef.current !== requestEpoch) return;
 
       console.error('Generation error:', err);
       const errorMessage = formatUnknownErrorMessage(err, '未知错误');
@@ -1626,7 +1629,6 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
     results.forEach((result) => {
       isRetryingRef.current.set(result.id, false);
       clearRetryTimer(result.id);
-      abortSubTaskRequest(result.id);
     });
     setResults((prev) =>
       {

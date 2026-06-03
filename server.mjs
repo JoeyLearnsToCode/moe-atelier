@@ -1115,7 +1115,6 @@ const startGeneration = async (taskId) => {
     uploads: Array.isArray(taskState.uploads) ? [...taskState.uploads] : [],
   }
   taskState.results.forEach((result) => {
-    abortActiveController(result.id)
     clearRetryTimer(result.id)
   })
   const concurrency = normalizeConcurrency(taskState.concurrency)
@@ -1177,7 +1176,7 @@ const stopSubTask = async (taskId, subTaskId, mode = 'pause') => {
   const taskState = await loadTaskState(taskId)
   if (!taskState) return null
   const resolvedMode = normalizeStopMode(mode)
-  const shouldAbort = resolvedMode === 'abort'
+  const shouldAbort = subTaskId && resolvedMode === 'abort'
   const targets = subTaskId
     ? taskState.results.filter((item) => item.id === subTaskId)
     : taskState.results
