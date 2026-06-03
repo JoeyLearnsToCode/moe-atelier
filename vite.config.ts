@@ -3,18 +3,19 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 const now = new Date();
+const utc8 = new Date(now.getTime() + 8 * 60 * 60 * 1000);
 const buildTime = [
-  now.getFullYear(),
+  utc8.getUTCFullYear(),
   '-',
-  String(now.getMonth() + 1).padStart(2, '0'),
+  String(utc8.getUTCMonth() + 1).padStart(2, '0'),
   '-',
-  String(now.getDate()).padStart(2, '0'),
+  String(utc8.getUTCDate()).padStart(2, '0'),
   ' ',
-  String(now.getHours()).padStart(2, '0'),
+  String(utc8.getUTCHours()).padStart(2, '0'),
   ':',
-  String(now.getMinutes()).padStart(2, '0'),
+  String(utc8.getUTCMinutes()).padStart(2, '0'),
   ':',
-  String(now.getSeconds()).padStart(2, '0'),
+  String(utc8.getUTCSeconds()).padStart(2, '0'),
 ].join('');
 
 export default defineConfig({
