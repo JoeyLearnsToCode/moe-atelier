@@ -129,9 +129,6 @@ const normalizeConcurrency = (value: unknown, fallback = DEFAULT_CONCURRENCY) =>
   return Math.max(1, Math.floor(value));
 };
 
-const isResultActive = (result?: Pick<SubTaskResult, 'status' | 'autoRetry'> | null) =>
-  Boolean(result && (result.status === 'loading' || result.autoRetry));
-
 const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove, onStatsUpdate, onCollect, onLog, collectionRevision, dragAttributes, dragListeners }: ImageTaskProps) => {
   const [prompt, setPrompt] = useState('');
   const promptRef = useRef(prompt);
@@ -1637,15 +1634,15 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
     setResults((prev) =>
       {
         const updated = prev.map<SubTaskResult>((item) => {
-        if (!isResultActive(item)) return item;
-        return { ...item, status: 'error', error: '已停止', autoRetry: false, endTime: Date.now() };
+          if (item.status !== 'error' || !item.autoRetry) return item;
+          const stripped = (item.error || '').replace(/\s*\([^(]*后重试\.\.\.\)\s*$/, '').trim();
+          return { ...item, autoRetry: false, error: stripped || '已停止', endTime: item.endTime || Date.now() };
         });
         currentResultsRef.current = updated;
         return updated;
       },
     );
     message.info('已停止所有请求');
-    setIsGlobalLoading(false);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
