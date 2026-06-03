@@ -283,6 +283,17 @@ const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
             </Form.Item>
           </div>
         </Form.Item>
+
+        <Form.Item label={<span style={{ fontWeight: 700, color: '#665555' }}>隐私模式</span>} style={{ marginBottom: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              模糊所有图片，点击取消模糊，5秒后自动恢复
+            </Text>
+            <Form.Item name="privacyMode" valuePropName="checked" noStyle>
+              <Switch />
+            </Form.Item>
+          </div>
+        </Form.Item>
       </div>
 
       <Form.Item noStyle shouldUpdate={(prev, cur) => prev.apiFormat !== cur.apiFormat}>

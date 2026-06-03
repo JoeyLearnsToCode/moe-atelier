@@ -48,6 +48,8 @@ export interface AppConfig {
   useResponseModalities: boolean;
   customJson: string;
 
+  privacyMode?: boolean;
+
   apiProfiles?: ApiProfile[];
   activeApiProfileId?: string;
 }

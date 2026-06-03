@@ -48,6 +48,7 @@ import {
   formatUnknownErrorMessage,
 } from '../utils/httpError';
 import { useInputGuard } from '../utils/inputSync';
+import PrivacyBlur from './PrivacyBlur';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -1950,13 +1951,15 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
             <div style={{ padding: '0 4px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {fileList.map((file, index) => (
                 <div key={file.uid} style={{ position: 'relative', width: 60, height: 60 }}>
-                  <Image
-                    src={file.thumbUrl || ''} 
-                    alt="preview" 
-                    style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 8 }}
-                    width={60}
-                    height={60}
-                  />
+                  <PrivacyBlur enabled={config.privacyMode ?? false}>
+                    <Image
+                      src={file.thumbUrl || ''} 
+                      alt="preview" 
+                      style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 8 }}
+                      width={60}
+                      height={60}
+                    />
+                  </PrivacyBlur>
                   <div 
                     style={{ 
                       position: 'absolute', top: -6, right: -6, 
@@ -2210,12 +2213,14 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                               }}>
                                 {result.status === 'success' && imageSrc ? (
                                   <>
+                                  <PrivacyBlur enabled={config.privacyMode ?? false}>
                                     <Image
                                       src={imageSrc}
                                       alt="Generated"
                                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                       wrapperStyle={{ width: '100%', height: '100%' }}
                                     />
+                                  </PrivacyBlur>
                                     {result.duration && (
                                       <div style={{
                                         position: 'absolute',
@@ -2343,12 +2348,14 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                           alignItems: 'center',
                           justifyContent: 'center'
                         }}>
-                          <Image
-                            src={img.displayUrl}
-                            alt="Generated"
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            wrapperStyle={{ width: '100%', height: '100%' }}
-                          />
+                          <PrivacyBlur enabled={config.privacyMode ?? false}>
+                            <Image
+                              src={img.displayUrl}
+                              alt="Generated"
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              wrapperStyle={{ width: '100%', height: '100%' }}
+                            />
+                          </PrivacyBlur>
                         </div>
                       </div>
                       <div style={{

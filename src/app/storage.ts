@@ -101,6 +101,7 @@ const DEFAULT_CONFIG: AppConfig = {
   apiFormat: 'openai',
   stream: false,
   enableCollection: true,
+  privacyMode: false,
 };
 
 const DEFAULT_GLOBAL_STATS: GlobalStats = {

@@ -6,6 +6,7 @@ import { openImageDb, IMAGE_STORE_NAME } from '../utils/imageDb';
 import { copyTextToClipboard } from '../utils/clipboard';
 import type { CollectionItem } from '../types/collection';
 import { COLORS } from '../theme/colors';
+import PrivacyBlur from './PrivacyBlur';
 
 const { Text } = Typography;
 
@@ -42,6 +43,7 @@ interface CollectionBoxProps {
   onRemoveGroup: (groupKey: string) => void;
   onClear: () => void;
   onCreateTask: (prompt: string, referenceImages: CollectionItem[]) => void;
+  privacyMode?: boolean;
 }
 
 // Helper functions
@@ -57,7 +59,8 @@ const CollectionGroupCard: React.FC<{
   onRemoveItem: (id: string) => void;
   onRemoveGroup: (groupKey: string) => void;
   onCreateTask: (prompt: string, referenceImages: CollectionItem[]) => void;
-}> = ({ group, activeIndex, setActiveIndex, onRemoveItem, onRemoveGroup, onCreateTask }) => {
+  privacyMode?: boolean;
+}> = ({ group, activeIndex, setActiveIndex, onRemoveItem, onRemoveGroup, onCreateTask, privacyMode }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
@@ -150,19 +153,21 @@ const CollectionGroupCard: React.FC<{
       {/* 图片区域 */}
       <div style={{ position: 'relative', aspectRatio: '4/3', background: '#FAFAFA' }}>
         {activeImage ? (
-          <Image.PreviewGroup
-            items={allThumbnails.map(i => i.resolvedImage).filter(Boolean) as string[]}
-            preview={{
-                current: activeIndex,
-                onChange: (current) => setActiveIndex(current),
-            }}
-          >
-            <Image
-              src={activeImage}
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              wrapperStyle={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
-            />
-          </Image.PreviewGroup>
+          <PrivacyBlur enabled={!!privacyMode}>
+            <Image.PreviewGroup
+              items={allThumbnails.map(i => i.resolvedImage).filter(Boolean) as string[]}
+              preview={{
+                  current: activeIndex,
+                  onChange: (current) => setActiveIndex(current),
+              }}
+            >
+              <Image
+                src={activeImage}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                wrapperStyle={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
+              />
+            </Image.PreviewGroup>
+          </PrivacyBlur>
         ) : (
           <div style={{
             width: '100%',
@@ -394,17 +399,19 @@ const CollectionGroupCard: React.FC<{
                 }}
               >
                 {item.resolvedImage ? (
-                  <img
-                    src={item.resolvedImage}
-                    alt=""
-                    draggable={false}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                      display: 'block',
-                    }}
-                  />
+                  <PrivacyBlur enabled={!!privacyMode}>
+                    <img
+                      src={item.resolvedImage}
+                      alt=""
+                      draggable={false}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        display: 'block',
+                      }}
+                    />
+                  </PrivacyBlur>
                 ) : (
                   <div style={{
                     width: '100%',
@@ -534,6 +541,7 @@ const CollectionBox: React.FC<CollectionBoxProps> = ({
   onRemoveGroup,
   onClear,
   onCreateTask,
+  privacyMode,
 }) => {
   const dbPromiseRef = useRef<Promise<IDBDatabase> | null>(null);
   const objectUrlMapRef = useRef<Map<string, string>>(new Map());
@@ -837,6 +845,7 @@ const CollectionBox: React.FC<CollectionBoxProps> = ({
                 onRemoveItem={onRemoveItem}
                 onRemoveGroup={onRemoveGroup}
                 onCreateTask={onCreateTask}
+                privacyMode={privacyMode}
               />
             ))}
           </div>

@@ -850,6 +850,7 @@ function App() {
             onRemoveGroup={handleRemoveCollectedGroup}
             onClear={handleClearCollection}
             onCreateTask={handleCreateTaskFromCollection}
+            privacyMode={config.privacyMode}
           />
         )}
 
@@ -864,6 +865,15 @@ function App() {
           fetchModels={fetchModels}
         />
 
+        <div style={{
+          textAlign: 'center',
+          padding: '12px 0 24px',
+          fontSize: 11,
+          color: '#D0C0C0',
+          userSelect: 'none',
+        }}>
+          构建时间：{__BUILD_TIME__}
+        </div>
       </Layout>
     </ConfigProvider>
   );
