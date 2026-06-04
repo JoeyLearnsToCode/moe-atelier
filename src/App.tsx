@@ -102,7 +102,7 @@ function App() {
     if (!collectionVisible) return;
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest('.collection-drawer')) {
+      if (!target.closest('.collection-drawer') && !target.closest('.ant-image-preview-root')) {
         setCollectionVisible(false);
       }
     };
