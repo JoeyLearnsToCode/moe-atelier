@@ -134,12 +134,27 @@ export const formatUnknownErrorMessage = (error: unknown, fallback = '未知错�
     message?: unknown;
     status?: unknown;
     statusText?: unknown;
+    code?: unknown;
+    cause?: unknown;
     response?: {
       status?: unknown;
       statusText?: unknown;
       data?: unknown;
     };
   };
+
+  const codeText =
+    typeof candidate.code === 'string' && candidate.code
+      ? `[${candidate.code}]`
+      : '';
+
+  const causeText = (() => {
+    if (!candidate.cause) return '';
+    const detail = extractErrorDetail(candidate.cause);
+    if (detail) return `(cause: ${detail})`;
+    const str = tryStringify(candidate.cause);
+    return str ? `(cause: ${str})` : '';
+  })();
 
   if (candidate.response) {
     const status =
@@ -150,7 +165,7 @@ export const formatUnknownErrorMessage = (error: unknown, fallback = '未知错�
           : undefined;
     const statusText =
       normalizeText(candidate.response.statusText) || normalizeText(candidate.statusText);
-    return formatHttpErrorMessage({
+    const httpMsg = formatHttpErrorMessage({
       status,
       statusText,
       body: candidate.response.data,
@@ -159,18 +174,21 @@ export const formatUnknownErrorMessage = (error: unknown, fallback = '未知错�
         extractErrorDetail(candidate.response.data) ||
         fallback,
     });
+    return [codeText, httpMsg, causeText].filter(Boolean).join(' ') || fallback;
   }
 
   const message = normalizeText(candidate.message);
   const status = typeof candidate.status === 'number' ? candidate.status : undefined;
   const statusText = normalizeText(candidate.statusText);
   if (status || statusText) {
-    return formatHttpErrorMessage({
+    const httpMsg = formatHttpErrorMessage({
       status,
       statusText,
       body: message || undefined,
       fallback,
     });
+    return [codeText, httpMsg, causeText].filter(Boolean).join(' ') || fallback;
   }
-  return message || fallback;
+
+  return [codeText, message, causeText].filter(Boolean).join(' ') || fallback;
 };
