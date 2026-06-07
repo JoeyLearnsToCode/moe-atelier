@@ -202,7 +202,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
   useEffect(() => {
     let isActive = true;
     const hydrate = async () => {
-      const stored = loadTaskState(storageKey);
+      const stored = await loadTaskState(storageKey);
       if (stored) {
         setPrompt(stored.prompt ?? '');
         const nextConcurrency = normalizeConcurrency(stored.concurrency, DEFAULT_CONCURRENCY);
@@ -386,7 +386,9 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
       stats,
       apiProfileId,
     };
-    saveTaskState(storageKey, payload);
+    saveTaskState(storageKey, payload).catch((err) =>
+      console.warn('Failed to persist task state:', err),
+    );
   }, [prompt, concurrency, enableSound, retryInterval, retryLimit, generationCount, results, generatedImages, stats, storageKey, hydrated, fileList, apiProfileId]);
 
   useEffect(() => {

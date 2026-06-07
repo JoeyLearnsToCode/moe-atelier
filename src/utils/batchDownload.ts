@@ -17,16 +17,16 @@ type CollectedEntry = {
   sourceUrl?: string;
 };
 
-const collectEntries = (
+const collectEntries = async (
   tasks: TaskConfig[],
   collectedItems: CollectionItem[],
-): CollectedEntry[] => {
+): Promise<CollectedEntry[]> => {
   const entries: CollectedEntry[] = [];
   const seenKeys = new Set<string>();
 
-  tasks.forEach((task) => {
-    const state = loadTaskState(getTaskStorageKey(task.id));
-    if (!state) return;
+  for (const task of tasks) {
+    const state = await loadTaskState(getTaskStorageKey(task.id));
+    if (!state) continue;
     const images = Array.isArray(state.generatedImages) ? state.generatedImages : [];
     images.forEach((img: PersistedGeneratedImage) => {
       if (!img.localKey) return;
@@ -40,7 +40,7 @@ const collectEntries = (
         sourceUrl: img.sourceUrl,
       });
     });
-  });
+  }
 
   collectedItems.forEach((item) => {
     if (!item.localKey) return;
@@ -135,7 +135,7 @@ export const buildBatchDownloadZip = async (
   collectedItems: CollectionItem[],
   options: BuildBatchDownloadOptions = {},
 ): Promise<{ blob: Blob; result: BatchDownloadResult } | null> => {
-  const entries = collectEntries(tasks, collectedItems);
+  const entries = await collectEntries(tasks, collectedItems);
   if (entries.length === 0) {
     return null;
   }

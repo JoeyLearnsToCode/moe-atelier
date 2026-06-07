@@ -292,7 +292,7 @@ function App() {
       results: [],
       uploads: [],
       stats: DEFAULT_TASK_STATS,
-    });
+    }).catch((err) => console.warn('Failed to persist task state:', err));
 
     setTasks([...tasks, { id: newTaskId, prompt }]);
   };
@@ -327,7 +327,7 @@ function App() {
       results: [],
       uploads: uploads,
       stats: DEFAULT_TASK_STATS,
-    });
+    }).catch((err) => console.warn('Failed to persist task state:', err));
 
     setTasks([...tasks, { id: newTaskId, prompt }]);
     setCollectionVisible(false);
