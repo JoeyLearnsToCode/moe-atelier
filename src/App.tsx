@@ -271,7 +271,7 @@ function App() {
 
   const handleAddTask = () => {
     const newTaskId = uuidv4();
-    setTasks([...tasks, { id: newTaskId, prompt: '' }]);
+    setTasks([{ id: newTaskId, prompt: '' }, ...tasks]);
   };
 
   const handleReorderTasks = useCallback((nextTasks: TaskConfig[]) => {
@@ -294,7 +294,7 @@ function App() {
       stats: DEFAULT_TASK_STATS,
     }).catch((err) => console.warn('Failed to persist task state:', err));
 
-    setTasks([...tasks, { id: newTaskId, prompt }]);
+    setTasks([{ id: newTaskId, prompt }, ...tasks]);
   };
 
   const handleCreateTaskFromCollection = (prompt: string, referenceImages: CollectionItem[]) => {
@@ -329,7 +329,7 @@ function App() {
       stats: DEFAULT_TASK_STATS,
     }).catch((err) => console.warn('Failed to persist task state:', err));
 
-    setTasks([...tasks, { id: newTaskId, prompt }]);
+    setTasks([{ id: newTaskId, prompt }, ...tasks]);
     setCollectionVisible(false);
     message.success('已创建新任务');
   };
