@@ -12,7 +12,9 @@ import {
   RocketFilled,
   HourglassFilled,
   DashboardFilled,
-  TrophyFilled
+  TrophyFilled,
+  DownloadOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons';
 import { v4 as uuidv4 } from 'uuid';
 import PromptDrawer from './components/PromptDrawer';
@@ -49,6 +51,11 @@ import {
 import { safeStorageSet } from './utils/storage';
 import { calculateSuccessRate, formatDuration } from './utils/stats';
 import { TASK_STATE_VERSION, saveTaskState, DEFAULT_TASK_STATS } from './components/imageTaskState';
+import {
+  buildBatchDownloadZip,
+  buildZipFilename,
+  downloadBlob,
+} from './utils/batchDownload';
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
@@ -73,6 +80,7 @@ function App() {
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [models, setModels] = useState<{label: string, value: string}[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null);
   const [form] = Form.useForm();
   const configRef = useRef(config);
   const collectedItemsRef = useRef(collectedItems);
@@ -551,6 +559,34 @@ function App() {
     message.success('数据总览统计已清空');
   };
 
+  const handleDownloadAll = useCallback(async () => {
+    if (downloadProgress) return;
+    try {
+      const pack = await buildBatchDownloadZip(tasks, collectedItems, {
+        onProgress: (p) => setDownloadProgress(p),
+      });
+      if (!pack) {
+        message.warning('暂无可下载的图片');
+        return;
+      }
+      downloadBlob(pack.blob, buildZipFilename());
+      if (pack.result.failed === 0) {
+        message.success(`已下载 ${pack.result.success} 张图片`);
+      } else if (pack.result.success === 0) {
+        message.error(`下载失败：${pack.result.errors[0] || '未知错误'}`);
+      } else {
+        message.warning(`已下载 ${pack.result.success} 张，${pack.result.failed} 张失败`);
+      }
+    } catch (err) {
+      const messageText = err instanceof Error ? err.message : '未知错误';
+      message.error(`打包失败：${messageText}`);
+    } finally {
+      setDownloadProgress(null);
+    }
+  }, [tasks, collectedItems, downloadProgress]);
+
+  const isDownloading = downloadProgress !== null;
+
   const successRate = calculateSuccessRate(
     globalStats.totalRequests,
     globalStats.successCount,
@@ -660,7 +696,41 @@ function App() {
                   color: '#FF9EB5' 
                 }}
             />
-            
+
+            <Tooltip title={isDownloading ? `打包中 ${downloadProgress.current}/${downloadProgress.total}` : '下载所有图片（不含上传参考图）'}>
+              <Button
+                icon={isDownloading ? <LoadingOutlined spin /> : <DownloadOutlined />}
+                onClick={handleDownloadAll}
+                size="large"
+                disabled={isDownloading}
+                className="mobile-hidden"
+                style={{ 
+                  background: 'rgba(255,255,255,0.6)', 
+                  border: '1px solid #FF9EB5',
+                  color: '#FF9EB5' 
+                }}
+              >
+                {isDownloading
+                  ? `打包中 ${downloadProgress.current}/${downloadProgress.total}`
+                  : '下载所有'}
+              </Button>
+            </Tooltip>
+            <Tooltip title="下载所有图片（不含上传参考图）">
+              <Button
+                icon={<DownloadOutlined />}
+                onClick={handleDownloadAll}
+                size="large"
+                shape="circle"
+                disabled={isDownloading}
+                className="desktop-hidden circle-icon-btn"
+                style={{ 
+                  background: 'rgba(255,255,255,0.6)', 
+                  border: '1px solid #FF9EB5',
+                  color: '#FF9EB5' 
+                }}
+              />
+            </Tooltip>
+
             <Button 
               icon={<SettingFilled />} 
               onClick={() => setConfigVisible(true)}

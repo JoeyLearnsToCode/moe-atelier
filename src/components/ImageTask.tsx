@@ -1481,7 +1481,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
 
         const endTime = Date.now();
         const duration = endTime - startTime;
-        const { displayUrl, localKey } = await persistImageLocally(imageUrl, subTaskId);
+        const { displayUrl, localKey } = await persistImageLocally(imageUrl, `${subTaskId}:${endTime}`);
         updateResult(subTaskId, { status: 'success', error: undefined, autoRetry: false, displayUrl, localKey, sourceUrl: imageUrl, savedLocal: false, endTime, duration });
         updateStats('success', duration);
         
