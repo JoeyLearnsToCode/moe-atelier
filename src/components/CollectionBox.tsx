@@ -523,6 +523,7 @@ const CollectionGroupCard: React.FC<{
               lineHeight: 1.5,
               fontStyle: group.prompt === '无提示词' ? 'italic' : 'normal',
               wordBreak: 'break-word',
+              whiteSpace: 'pre-line',
             }}>
               {group.prompt}
             </Text>
@@ -675,9 +676,8 @@ const CollectionBox: React.FC<CollectionBoxProps> = ({
     const sortedItems = [...resolvedItems].sort((a, b) => b.timestamp - a.timestamp);
     sortedItems.forEach((item) => {
       const rawPrompt = item.prompt || '';
-      const normalized = normalizePrompt(rawPrompt);
       const key = buildPromptKey(rawPrompt);
-      const displayPrompt = normalized || '无提示词';
+      const displayPrompt = rawPrompt.trim() || '无提示词';
       const existing = groups.get(key);
       if (!existing) {
         groups.set(key, {
