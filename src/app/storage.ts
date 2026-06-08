@@ -12,6 +12,7 @@ export const STORAGE_KEYS = {
   tasks: 'moe-image-tasks',
   globalStats: 'moe-image-global-stats',
   collection: 'moe-image-collection',
+  lastDownloadTime: 'moe-image-last-download-time',
 };
 
 const TASK_STORAGE_PREFIX = 'moe-image-task:';
@@ -522,6 +523,17 @@ export const loadCollectionItems = (): CollectionItem[] => {
     console.warn('Failed to parse collection cache:', err);
     return [];
   }
+};
+
+export const loadLastDownloadTime = (): number | null => {
+  const raw = safeStorageGet(STORAGE_KEYS.lastDownloadTime);
+  if (!raw) return null;
+  const ts = Number(raw);
+  return Number.isFinite(ts) && ts > 0 ? ts : null;
+};
+
+export const saveLastDownloadTime = (timestamp: number) => {
+  safeStorageSet(STORAGE_KEYS.lastDownloadTime, String(timestamp));
 };
 
 export const saveCollectionItems = (items: CollectionItem[]) => {

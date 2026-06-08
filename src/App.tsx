@@ -37,8 +37,10 @@ import {
   saveCollectionItems,
   loadFormatConfig,
   loadGlobalStats,
+  loadLastDownloadTime,
   loadTasks,
   saveConfig,
+  saveLastDownloadTime,
   STORAGE_KEYS,
 } from './app/storage';
 import {
@@ -562,14 +564,17 @@ function App() {
   const handleDownloadAll = useCallback(async () => {
     if (downloadProgress) return;
     try {
+      const lastDownloadTime = loadLastDownloadTime() ?? undefined;
       const pack = await buildBatchDownloadZip(tasks, collectedItems, {
         onProgress: (p) => setDownloadProgress(p),
+        lastDownloadTime,
       });
       if (!pack) {
         message.warning('暂无可下载的图片');
         return;
       }
       downloadBlob(pack.blob, buildZipFilename());
+      saveLastDownloadTime(Date.now());
       if (pack.result.failed === 0) {
         message.success(`已下载 ${pack.result.success} 张图片`);
       } else if (pack.result.success === 0) {

@@ -20,6 +20,7 @@ type CollectedEntry = {
 const collectEntries = async (
   tasks: TaskConfig[],
   collectedItems: CollectionItem[],
+  lastDownloadTime?: number,
 ): Promise<CollectedEntry[]> => {
   const entries: CollectedEntry[] = [];
   const seenKeys = new Set<string>();
@@ -31,12 +32,14 @@ const collectEntries = async (
     images.forEach((img: PersistedGeneratedImage) => {
       if (!img.localKey) return;
       if (seenKeys.has(img.localKey)) return;
+      const ts = typeof img.timestamp === 'number' ? img.timestamp : Date.now();
+      if (lastDownloadTime !== undefined && ts <= lastDownloadTime) return;
       seenKeys.add(img.localKey);
       entries.push({
         localKey: img.localKey,
         type: 'task',
         refId: task.id.slice(0, 6),
-        timestamp: typeof img.timestamp === 'number' ? img.timestamp : Date.now(),
+        timestamp: ts,
         sourceUrl: img.sourceUrl,
       });
     });
@@ -45,13 +48,15 @@ const collectEntries = async (
   collectedItems.forEach((item) => {
     if (!item.localKey) return;
     if (isUploadCollectionKey(item.localKey) || isUploadCollectionKey(item.id)) return;
+    const ts = typeof item.timestamp === 'number' ? item.timestamp : Date.now();
+    if (lastDownloadTime !== undefined && ts <= lastDownloadTime) return;
     if (seenKeys.has(item.localKey)) return;
     seenKeys.add(item.localKey);
     entries.push({
       localKey: item.localKey,
       type: 'collection',
       refId: item.id.slice(0, 6),
-      timestamp: typeof item.timestamp === 'number' ? item.timestamp : Date.now(),
+      timestamp: ts,
       sourceUrl: item.image,
     });
   });
@@ -128,6 +133,7 @@ export interface BatchDownloadResult {
 
 export interface BuildBatchDownloadOptions {
   onProgress?: (progress: BatchDownloadProgress) => void;
+  lastDownloadTime?: number;
 }
 
 export const buildBatchDownloadZip = async (
@@ -135,7 +141,7 @@ export const buildBatchDownloadZip = async (
   collectedItems: CollectionItem[],
   options: BuildBatchDownloadOptions = {},
 ): Promise<{ blob: Blob; result: BatchDownloadResult } | null> => {
-  const entries = await collectEntries(tasks, collectedItems);
+  const entries = await collectEntries(tasks, collectedItems, options.lastDownloadTime);
   if (entries.length === 0) {
     return null;
   }
