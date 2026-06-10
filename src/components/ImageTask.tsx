@@ -1500,9 +1500,18 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
           collectReferenceImagesForCollection(requestSnapshot);
         }
 
+        const generatedImageId = uuidv4();
+        let generatedImageUrl = displayUrl;
+        if (localKey) {
+          const blob = await getImageBlob(localKey);
+          if (blob) {
+            generatedImageUrl = URL.createObjectURL(blob);
+            registerObjectUrl(generatedImageId, generatedImageUrl);
+          }
+        }
         setGeneratedImages(prev => [{
-          id: uuidv4(),
-          displayUrl,
+          id: generatedImageId,
+          displayUrl: generatedImageUrl,
           localKey,
           sourceUrl: imageUrl,
           timestamp: endTime,
