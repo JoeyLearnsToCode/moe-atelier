@@ -6,6 +6,17 @@ import type { PersistedGeneratedImage } from '../types/imageTask';
 import { getTaskStorageKey } from '../app/storage';
 import { loadTaskState } from '../components/imageTaskState';
 
+/** 用于内容去重的 hash 前缀长度（64KB）。取图片前段数据进行 hash，
+ *  兼顾速度与准确性——64KB 足以区分不同图片，SHA-256 计算瞬时完成 */
+const HASH_PREFIX_BYTES = 65536;
+
+const computeBlobPrefixHash = async (blob: Blob): Promise<string> => {
+  const slice = blob.slice(0, HASH_PREFIX_BYTES);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', await slice.arrayBuffer());
+  const hashArray = new Uint8Array(hashBuffer);
+  return Array.from(hashArray, (b) => b.toString(16).padStart(2, '0')).join('');
+};
+
 const isUploadCollectionKey = (key?: string) =>
   Boolean(key && key.startsWith('collection:upload:'));
 
@@ -151,8 +162,10 @@ export const buildBatchDownloadZip = async (
   const zip = new JSZip();
   const sourceCounters: Record<string, number> = {};
   const errors: string[] = [];
+  const seenHashes = new Set<string>();
   let success = 0;
   let failed = 0;
+  let duplicate = 0;
 
   for (let i = 0; i < entries.length; i += 1) {
     const entry = entries[i];
@@ -168,6 +181,13 @@ export const buildBatchDownloadZip = async (
       errors.push(`${entry.localKey}: 无法获取图片数据`);
       continue;
     }
+
+    const hash = await computeBlobPrefixHash(blob);
+    if (seenHashes.has(hash)) {
+      duplicate += 1;
+      continue;
+    }
+    seenHashes.add(hash);
 
     const ext = inferExtension(blob.type);
     const sourceKey = `${entry.type}-${entry.refId}`;
