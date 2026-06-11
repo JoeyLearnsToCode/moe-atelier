@@ -90,6 +90,9 @@ export const formatHttpErrorMessage = ({
   if (suffix) {
     return suffix;
   }
+  if (prefix) {
+    return `${prefix} ${fallback}`;
+  }
   return fallback;
 };
 
