@@ -103,6 +103,7 @@ const DEFAULT_CONFIG: AppConfig = {
   stream: false,
   enableCollection: true,
   privacyMode: false,
+  skipDownloadedInDownloadAll: true,
 };
 
 const DEFAULT_GLOBAL_STATS: GlobalStats = {
@@ -300,6 +301,7 @@ export const saveConfig = (config: AppConfig) => {
     stream: config.stream,
     enableCollection: config.enableCollection,
     privacyMode: config.privacyMode,
+    skipDownloadedInDownloadAll: config.skipDownloadedInDownloadAll,
     apiProfiles: config.apiProfiles,
     activeApiProfileId: config.activeApiProfileId,
   };

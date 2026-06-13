@@ -49,6 +49,7 @@ export interface AppConfig {
   customJson: string;
 
   privacyMode?: boolean;
+  skipDownloadedInDownloadAll?: boolean;
 
   apiProfiles?: ApiProfile[];
   activeApiProfileId?: string;

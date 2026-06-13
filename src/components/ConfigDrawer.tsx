@@ -294,6 +294,17 @@ const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
             </Form.Item>
           </div>
         </Form.Item>
+
+        <Form.Item label={<span style={{ fontWeight: 700, color: '#665555' }}>下载全部跳过已下载</span>} style={{ marginBottom: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              下载全部时跳过已下载的图片
+            </Text>
+            <Form.Item name="skipDownloadedInDownloadAll" valuePropName="checked" noStyle>
+              <Switch />
+            </Form.Item>
+          </div>
+        </Form.Item>
       </div>
 
       <Form.Item noStyle shouldUpdate={(prev, cur) => prev.apiFormat !== cur.apiFormat}>
