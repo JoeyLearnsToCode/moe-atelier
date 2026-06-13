@@ -704,7 +704,7 @@ function App() {
                 }}
             />
 
-            <Tooltip title={isDownloading ? `打包中 ${downloadProgress.current}/${downloadProgress.total}` : '下载所有图片（不含上传参考图）'}>
+            <Tooltip title={isDownloading ? `打包中 ${downloadProgress.current}/${downloadProgress.total}` : '下载全部图片（不含上传参考图）'}>
               <Button
                 icon={isDownloading ? <LoadingOutlined spin /> : <DownloadOutlined />}
                 onClick={handleDownloadAll}
@@ -719,10 +719,10 @@ function App() {
               >
                 {isDownloading
                   ? `打包中 ${downloadProgress.current}/${downloadProgress.total}`
-                  : '下载所有'}
+                  : '下载全部'}
               </Button>
             </Tooltip>
-            <Tooltip title="下载所有图片（不含上传参考图）">
+            <Tooltip title="下载全部图片（不含上传参考图）">
               <Button
                 icon={<DownloadOutlined />}
                 onClick={handleDownloadAll}

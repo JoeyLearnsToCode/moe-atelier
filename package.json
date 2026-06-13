@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node server.mjs --dev",
+    "dev": "vite",
     "build": "tsc && vite build",
     "preview": "node server.mjs --prod",
     "start": "node server.mjs --prod"

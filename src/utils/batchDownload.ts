@@ -207,6 +207,38 @@ export const buildBatchDownloadZip = async (
   };
 };
 
+export const buildGroupDownloadZip = async (
+  items: CollectionItem[],
+  prompt: string,
+): Promise<Blob | null> => {
+  const generatedItems = items.filter(
+    (item) => !isUploadCollectionKey(item.localKey) && !isUploadCollectionKey(item.id),
+  );
+  if (generatedItems.length === 0) return null;
+
+  const zip = new JSZip();
+
+  zip.file('prompt.txt', prompt || '');
+
+  for (let i = 0; i < generatedItems.length; i++) {
+    const item = generatedItems[i];
+    let blob: Blob | null = null;
+    if (item.localKey) {
+      blob = await readImageBlob(item.localKey);
+    }
+    if (!blob && item.image) {
+      blob = await fetchSourceBlob(item.image);
+    }
+    if (!blob) continue;
+
+    const ext = inferExtension(blob.type);
+    const filename = `image_${String(i + 1).padStart(3, '0')}.${ext}`;
+    zip.file(filename, blob);
+  }
+
+  return await zip.generateAsync({ type: 'blob' });
+};
+
 export const downloadBlob = (blob: Blob, filename: string): void => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

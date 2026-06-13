@@ -4,6 +4,7 @@ import Icon, { DeleteFilled, DownloadOutlined, PictureFilled, LeftOutlined, Righ
 import { openImageDb, IMAGE_STORE_NAME } from '../utils/imageDb';
 
 import { copyTextToClipboard } from '../utils/clipboard';
+import { downloadBlob, buildGroupDownloadZip, buildZipFilename } from '../utils/batchDownload';
 import type { CollectionItem } from '../types/collection';
 import { COLORS } from '../theme/colors';
 import PrivacyBlur from './PrivacyBlur';
@@ -137,6 +138,23 @@ const CollectionGroupCard: React.FC<{
 
   const handleRemoveGroup = () => {
     onRemoveGroup(group.key);
+  };
+
+  const handleDownloadGroup = async () => {
+    const generatedItems = group.items.filter(item => !isUploadCollectionItem(item));
+    if (generatedItems.length === 0) {
+      message.warning('没有可下载的图片');
+      return;
+    }
+    message.loading({ content: '正在打包...', key: 'groupDownload' });
+    const zipBlob = await buildGroupDownloadZip(group.items, group.prompt);
+    if (!zipBlob) {
+      message.destroy('groupDownload');
+      message.error('打包失败');
+      return;
+    }
+    message.destroy('groupDownload');
+    downloadBlob(zipBlob, buildZipFilename());
   };
 
   return (
@@ -487,6 +505,21 @@ const CollectionGroupCard: React.FC<{
                   size="small" 
                   icon={<SendFilled style={{ fontSize: 12 }} />}
                   onClick={handleCreateTask}
+                  style={{ 
+                    height: 20, 
+                    width: 20, 
+                    minWidth: 20,
+                    padding: 0,
+                    color: COLORS.textLight 
+                  }}
+                />
+              </Tooltip>
+              <Tooltip title="下载整组（zip）">
+                <Button 
+                  type="text" 
+                  size="small" 
+                  icon={<DownloadOutlined style={{ fontSize: 12 }} />}
+                  onClick={handleDownloadGroup}
                   style={{ 
                     height: 20, 
                     width: 20, 
