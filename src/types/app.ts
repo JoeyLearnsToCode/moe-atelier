@@ -11,7 +11,7 @@ export interface ApiProfile {
   apiUrl: string;
   apiKey: string;
   model: string;
-  apiFormat: 'openai' | 'gemini' | 'vertex';
+  apiFormat: 'openai' | 'gemini' | 'vertex' | 'openai-image';
   apiVersion: string;
   vertexProjectId?: string;
   vertexLocation?: string;
@@ -31,7 +31,7 @@ export interface AppConfig {
   apiUrl: string;
   apiKey: string;
   model: string;
-  apiFormat: 'openai' | 'gemini' | 'vertex';
+  apiFormat: 'openai' | 'gemini' | 'vertex' | 'openai-image';
   apiVersion: string;
   vertexProjectId?: string;
   vertexLocation?: string;

@@ -1345,7 +1345,92 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
       let imageUrl: string | null = null;
       let rawResponse: string | undefined;
 
-      if (apiFormat === 'openai') {
+      if (apiFormat === 'openai-image') {
+        const apiUrl = resolveApiUrl(profile.apiUrl, 'openai-image');
+        const baseInfo = normalizeApiBase(apiUrl);
+        const basePath = baseInfo.origin
+          ? `${baseInfo.origin}${baseInfo.segments.length ? `/${baseInfo.segments.join('/')}` : ''}`
+          : apiUrl.replace(/\/+$/, '');
+        const version = resolveApiVersion(apiUrl, profile.apiVersion, 'v1');
+        const hasVersion = Boolean(inferApiVersionFromUrl(apiUrl));
+        const openAiBase = hasVersion ? basePath : `${basePath}/${version}`;
+        const endpoint = hasImage ? 'images/edits' : 'images/generations';
+        const requestUrl = openAiBase.endsWith(`/${endpoint}`)
+          ? openAiBase
+          : `${openAiBase}/${endpoint}`;
+
+        const headers: Record<string, string> = {
+          'Authorization': `Bearer ${profile.apiKey}`,
+        };
+
+        let responseData: any;
+
+        if (hasImage) {
+          const formData = new FormData();
+          const file = fileList[0];
+          if (file.originFileObj) {
+            formData.append('image', file.originFileObj);
+          }
+          formData.append('prompt', promptRef.current);
+          formData.append('model', profile.model);
+          formData.append('n', '1');
+          formData.append('moderation', 'low');
+
+          if (config.stream) {
+            formData.append('stream', 'true');
+            const fetchResponse = await fetch(requestUrl, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${profile.apiKey}` },
+              body: formData,
+              signal: controller.signal,
+            });
+            if (!fetchResponse.ok) {
+              throw new Error(
+                await formatResponseErrorMessage(
+                  fetchResponse,
+                  fetchResponse.statusText || '请求失败',
+                ),
+              );
+            }
+            responseData = await readGeminiStream(fetchResponse);
+          } else {
+            const response = await axios.post(requestUrl, formData, {
+              headers,
+              signal: controller.signal,
+            });
+            responseData = response.data;
+          }
+        } else {
+          const payload = { model: profile.model, prompt: promptRef.current, n: 1, moderation: 'low' };
+
+          if (config.stream) {
+            const fetchResponse = await fetch(requestUrl, {
+              method: 'POST',
+              headers: { ...headers, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...payload, stream: true }),
+              signal: controller.signal,
+            });
+            if (!fetchResponse.ok) {
+              throw new Error(
+                await formatResponseErrorMessage(
+                  fetchResponse,
+                  fetchResponse.statusText || '请求失败',
+                ),
+              );
+            }
+            responseData = await readGeminiStream(fetchResponse);
+          } else {
+            const response = await axios.post(requestUrl, payload, {
+              headers: { ...headers, 'Content-Type': 'application/json' },
+              signal: controller.signal,
+            });
+            responseData = response.data;
+          }
+        }
+
+        rawResponse = JSON.stringify(responseData);
+        imageUrl = resolveImageFromResponse(responseData);
+      } else if (apiFormat === 'openai') {
         const apiUrl = resolveApiUrl(profile.apiUrl, 'openai');
         const baseInfo = normalizeApiBase(apiUrl);
         const basePath = baseInfo.origin

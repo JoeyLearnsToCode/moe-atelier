@@ -167,7 +167,7 @@ function App() {
       const apiFormat = currentConfig.apiFormat || 'openai';
       const apiUrl = resolveApiUrl(currentConfig.apiUrl, apiFormat);
       const versionFallback =
-        apiFormat === 'openai' ? 'v1' : apiFormat === 'vertex' ? 'v1beta1' : 'v1beta';
+        apiFormat === 'openai' || apiFormat === 'openai-image' ? 'v1' : apiFormat === 'vertex' ? 'v1beta1' : 'v1beta';
       const version = resolveApiVersion(
         apiUrl,
         currentConfig.apiVersion,
@@ -181,7 +181,7 @@ function App() {
       let url = '';
       const headers: Record<string, string> = {};
 
-      if (apiFormat === 'openai') {
+      if (apiFormat === 'openai' || apiFormat === 'openai-image') {
         const hasVersion = Boolean(inferApiVersionFromUrl(apiUrl));
         const openAiBase = hasVersion ? basePath : `${basePath}/${version}`;
         url = openAiBase.endsWith('/models') ? openAiBase : `${openAiBase}/models`;
@@ -224,7 +224,7 @@ function App() {
       }
 
       const data = await res.json();
-      if (apiFormat === 'openai') {
+      if (apiFormat === 'openai' || apiFormat === 'openai-image') {
         const list = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : [];
         if (list.length === 0) {
           throw new Error('返回数据格式不正确');

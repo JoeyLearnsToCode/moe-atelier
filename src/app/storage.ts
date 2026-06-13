@@ -75,6 +75,16 @@ const DEFAULT_FORMAT_CONFIGS: Record<ApiFormat, FormatConfig> = {
     vertexPublisher: 'google',
     ...createDefaultAdvancedConfig(),
   },
+  'openai-image': {
+    apiUrl: 'https://api.openai.com/v1',
+    apiKey: '',
+    model: '',
+    apiVersion: 'v1',
+    vertexProjectId: '',
+    vertexLocation: 'global',
+    vertexPublisher: 'google',
+    ...createDefaultAdvancedConfig(),
+  },
   gemini: {
     apiUrl: 'https://generativelanguage.googleapis.com',
     apiKey: '',
