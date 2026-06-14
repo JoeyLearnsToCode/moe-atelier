@@ -67,6 +67,9 @@ const CollectionGroupCard: React.FC<{
   const [startX, setStartX] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
   const dragDistanceRef = useRef(0);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
 
   const total = group.items.length;
   // 计算生成图数量（排除参考图）
@@ -96,6 +99,44 @@ const CollectionGroupCard: React.FC<{
       }
     }
   }, [activeIndex]);
+
+  // Keyboard left/right navigation
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || total <= 1) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setActiveIndex((activeIndex - 1 + total) % total);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setActiveIndex((activeIndex + 1) % total);
+      }
+    };
+    el.addEventListener('keydown', handleKeyDown);
+    el.setAttribute('tabindex', '0');
+    return () => {
+      el.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeIndex, total]);
+
+  // Touch swipe navigation
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    if (Math.abs(dx) < 30) return;
+    if (Math.abs(dy) > Math.abs(dx)) return;
+    if (dx > 0) {
+      setActiveIndex((activeIndex - 1 + total) % total);
+    } else {
+      setActiveIndex((activeIndex + 1) % total);
+    }
+  };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!scrollContainerRef.current) return;
@@ -162,7 +203,10 @@ const CollectionGroupCard: React.FC<{
 
   return (
     <div
+      ref={cardRef}
       className="collection-card"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
       style={{
         background: COLORS.white,
         borderRadius: 16,

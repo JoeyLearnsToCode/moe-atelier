@@ -661,6 +661,9 @@ const PromptDrawer: React.FC<PromptDrawerProps> = ({ visible, onClose, onCreateT
     targetCenterY: number;
   } | null>(null);
   const ticking = useRef(false);
+  const modalImageRef = useRef<HTMLDivElement>(null);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
 
   const syncContributorNameLayout = useCallback(() => {
     if (!headerRef.current || !nameRef.current || !backButtonRef.current) {
@@ -1085,6 +1088,48 @@ const PromptDrawer: React.FC<PromptDrawerProps> = ({ visible, onClose, onCreateT
     if (!previewPrompt) return '';
     return formatPromptTime(previewPrompt);
   }, [previewPrompt]);
+
+  // Keyboard & touch navigation for preview modal
+  useEffect(() => {
+    if (!previewPrompt || !currentPreviewData || currentPreviewData.images.length <= 1) return;
+    const el = modalImageRef.current;
+    if (!el) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setPreviewImageIndex(prev => (prev - 1 + currentPreviewData.images.length) % currentPreviewData.images.length);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setPreviewImageIndex(prev => (prev + 1) % currentPreviewData.images.length);
+      }
+    };
+    el.addEventListener('keydown', handleKeyDown);
+    el.setAttribute('tabindex', '0');
+
+    const handleTouchStart = (e: TouchEvent) => {
+      touchStartX.current = e.touches[0].clientX;
+      touchStartY.current = e.touches[0].clientY;
+    };
+    const handleTouchEnd = (e: TouchEvent) => {
+      const dx = e.changedTouches[0].clientX - touchStartX.current;
+      const dy = e.changedTouches[0].clientY - touchStartY.current;
+      if (Math.abs(dx) < 30) return;
+      if (Math.abs(dy) > Math.abs(dx)) return;
+      if (dx > 0) {
+        setPreviewImageIndex(prev => (prev - 1 + currentPreviewData.images.length) % currentPreviewData.images.length);
+      } else {
+        setPreviewImageIndex(prev => (prev + 1) % currentPreviewData.images.length);
+      }
+    };
+    el.addEventListener('touchstart', handleTouchStart, { passive: true });
+    el.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      el.removeEventListener('keydown', handleKeyDown);
+      el.removeEventListener('touchstart', handleTouchStart);
+      el.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [previewPrompt, currentPreviewData]);
 
   // Layout Detection
   useEffect(() => {
@@ -1930,7 +1975,9 @@ const PromptDrawer: React.FC<PromptDrawerProps> = ({ visible, onClose, onCreateT
             background: '#fff'
           }}>
             {/* Image Area */}
-            <div style={{ 
+            <div
+              ref={modalImageRef}
+              style={{ 
               flex: (isMobile || imageAspectRatio === 'landscape') ? '0 0 auto' : '1.5',
               background: '#000',
               display: 'flex', 
