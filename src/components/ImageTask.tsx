@@ -1553,6 +1553,12 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
         rawResponse = JSON.stringify(data);
         imageUrl = resolveImageFromResponse(data);
       }
+
+      if (imageUrl && /^http:\/\//i.test(imageUrl)) {
+        const warnMsg = `任务 ${subTaskId.slice(0, 8)}: 图片 URL 使用非加密 HTTP 协议 — ${imageUrl}`;
+        message.warning(warnMsg);
+        onLog?.({ id: uuidv4(), taskId: id, message: warnMsg, timestamp: Date.now() });
+      }
       
       if (imageUrl) {
         if (generationEpochRef.current !== requestEpoch) return;

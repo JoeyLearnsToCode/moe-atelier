@@ -129,12 +129,12 @@ export const resolveImageFromResponse = (data: any): string | null => {
       const normalized = normalizeImageUrl(fromDataArray);
       if (normalized) return normalized;
     }
-    if (fromDataArray.url) {
-      const normalized = normalizeImageUrl(fromDataArray.url);
-      if (normalized) return normalized;
-    }
     if (fromDataArray.b64_json) {
       const normalized = normalizeImageUrl(fromDataArray.b64_json);
+      if (normalized) return normalized;
+    }
+    if (fromDataArray.url) {
+      const normalized = normalizeImageUrl(fromDataArray.url);
       if (normalized) return normalized;
     }
   }
