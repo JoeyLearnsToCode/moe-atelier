@@ -4,7 +4,7 @@ import Icon, { DeleteFilled, DownloadOutlined, PictureFilled, LeftOutlined, Righ
 import { openImageDb, IMAGE_STORE_NAME } from '../utils/imageDb';
 
 import { copyTextToClipboard } from '../utils/clipboard';
-import { downloadBlob, buildGroupDownloadZip, buildZipFilename } from '../utils/batchDownload';
+import { downloadBlob, buildGroupDownloadZip, sanitizeFilename, computeStableId } from '../utils/batchDownload';
 import type { CollectionItem } from '../types/collection';
 import { COLORS } from '../theme/colors';
 import PrivacyBlur from './PrivacyBlur';
@@ -79,7 +79,9 @@ const CollectionGroupCard: React.FC<{
     ? generatedItems.findIndex((item) => item.id === activeItem.id)
     : -1;
   const showPager = generatedCount > 1 && activeGeneratedIndex >= 0;
-  const downloadName = `collection-${activeItem?.timestamp || Date.now()}.png`;
+  const downloadName = activeItem?.localKey
+    ? `${sanitizeFilename(activeItem.localKey)}.png`
+    : `${activeItem?.id || Date.now()}.png`;
   
   const allThumbnails = group.items;
 
@@ -154,7 +156,8 @@ const CollectionGroupCard: React.FC<{
       return;
     }
     message.destroy('groupDownload');
-    downloadBlob(zipBlob, buildZipFilename());
+    const groupId = await computeStableId(group.prompt || '');
+    downloadBlob(zipBlob, `moe-atelier-${groupId}.zip`);
   };
 
   return (

@@ -2410,7 +2410,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                                   }}
                                   className="hover-scale"
                                   >
-                                    <a href={imageSrc} download={`image-${result.id}.png`}
+                                    <a href={imageSrc} download={`image-${result.localKey || result.id}.png`}
                                       style={{ color: 'inherit', display: 'flex' }}>
                                       <DownloadOutlined />
                                     </a>
@@ -2482,7 +2482,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                         </Text>
                         <a
                           href={img.displayUrl}
-                          download={`image-${img.id}.png`}
+                          download={`image-${img.localKey || img.id}.png`}
                           style={{ color: '#998888', fontSize: 14, display: 'flex' }}
                         >
                           <DownloadOutlined />

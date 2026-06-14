@@ -1,13 +1,7 @@
 import JSZip from 'jszip';
 import { openImageDb, IMAGE_STORE_NAME } from './imageDb';
 import type { CollectionItem } from '../types/collection';
-import type { TaskConfig } from '../types/app';
-import type { PersistedGeneratedImage } from '../types/imageTask';
-import { getTaskStorageKey } from '../app/storage';
-import { loadTaskState } from '../components/imageTaskState';
 
-/** 用于内容去重的 hash 前缀长度（64KB）。取图片前段数据进行 hash，
- *  兼顾速度与准确性——64KB 足以区分不同图片，SHA-256 计算瞬时完成 */
 const HASH_PREFIX_BYTES = 65536;
 
 const computeBlobPrefixHash = async (blob: Blob): Promise<string> => {
@@ -20,59 +14,23 @@ const computeBlobPrefixHash = async (blob: Blob): Promise<string> => {
 const isUploadCollectionKey = (key?: string) =>
   Boolean(key && key.startsWith('collection:upload:'));
 
-type CollectedEntry = {
-  localKey: string;
-  type: 'task' | 'collection';
-  refId: string;
-  timestamp: number;
-  sourceUrl?: string;
+const normalizePrompt = (prompt: string) =>
+  prompt.trim().replace(/\s+/g, ' ');
+
+const buildPromptKey = (prompt: string) => {
+  const normalized = normalizePrompt(prompt);
+  return normalized ? normalized.toLowerCase() : '__empty__';
 };
 
-const collectEntries = async (
-  tasks: TaskConfig[],
-  collectedItems: CollectionItem[],
-  lastDownloadTime?: number,
-): Promise<CollectedEntry[]> => {
-  const entries: CollectedEntry[] = [];
-  const seenKeys = new Set<string>();
+export const sanitizeFilename = (name: string): string => {
+  return name.replace(/[:]/g, '-').replace(/[<>:"/\\|?*]/g, '_');
+};
 
-  for (const task of tasks) {
-    const state = await loadTaskState(getTaskStorageKey(task.id));
-    if (!state) continue;
-    const images = Array.isArray(state.generatedImages) ? state.generatedImages : [];
-    images.forEach((img: PersistedGeneratedImage) => {
-      if (!img.localKey) return;
-      if (seenKeys.has(img.localKey)) return;
-      const ts = typeof img.timestamp === 'number' ? img.timestamp : Date.now();
-      if (lastDownloadTime !== undefined && ts <= lastDownloadTime) return;
-      seenKeys.add(img.localKey);
-      entries.push({
-        localKey: img.localKey,
-        type: 'task',
-        refId: task.id.slice(0, 6),
-        timestamp: ts,
-        sourceUrl: img.sourceUrl,
-      });
-    });
-  }
-
-  collectedItems.forEach((item) => {
-    if (!item.localKey) return;
-    if (isUploadCollectionKey(item.localKey) || isUploadCollectionKey(item.id)) return;
-    const ts = typeof item.timestamp === 'number' ? item.timestamp : Date.now();
-    if (lastDownloadTime !== undefined && ts <= lastDownloadTime) return;
-    if (seenKeys.has(item.localKey)) return;
-    seenKeys.add(item.localKey);
-    entries.push({
-      localKey: item.localKey,
-      type: 'collection',
-      refId: item.id.slice(0, 6),
-      timestamp: ts,
-      sourceUrl: item.image,
-    });
-  });
-
-  return entries;
+export const computeStableId = async (input: string): Promise<string> => {
+  const encoder = new TextEncoder();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(input));
+  const hashArray = new Uint8Array(hashBuffer);
+  return Array.from(hashArray.slice(0, 8), (b) => b.toString(16).padStart(2, '0')).join('');
 };
 
 const inferExtension = (mimeType: string): string => {
@@ -148,62 +106,87 @@ export interface BuildBatchDownloadOptions {
 }
 
 export const buildBatchDownloadZip = async (
-  tasks: TaskConfig[],
   collectedItems: CollectionItem[],
   options: BuildBatchDownloadOptions = {},
 ): Promise<{ blob: Blob; result: BatchDownloadResult } | null> => {
-  const entries = await collectEntries(tasks, collectedItems, options.lastDownloadTime);
-  if (entries.length === 0) {
-    return null;
+  const lastDownloadTime = options.lastDownloadTime;
+  const groups = new Map<string, { prompt: string; items: CollectionItem[] }>();
+
+  for (const item of collectedItems) {
+    if (!item.localKey) continue;
+    if (isUploadCollectionKey(item.localKey) || isUploadCollectionKey(item.id)) continue;
+    const ts = typeof item.timestamp === 'number' ? item.timestamp : Date.now();
+    if (lastDownloadTime !== undefined && ts <= lastDownloadTime) continue;
+
+    const key = buildPromptKey(item.prompt || '');
+    let group = groups.get(key);
+    if (!group) {
+      group = { prompt: item.prompt || '', items: [] };
+      groups.set(key, group);
+    }
+    group.items.push(item);
   }
 
-  entries.sort((a, b) => b.timestamp - a.timestamp);
+  if (groups.size === 0) return null;
+
+  const groupList = Array.from(groups.entries())
+    .map(([key, g]) => ({ key, prompt: g.prompt, items: g.items }))
+    .sort((a, b) => {
+      const aTs = a.items.reduce((m, i) => Math.max(m, i.timestamp), 0);
+      const bTs = b.items.reduce((m, i) => Math.max(m, i.timestamp), 0);
+      return bTs - aTs;
+    });
 
   const zip = new JSZip();
-  const sourceCounters: Record<string, number> = {};
   const errors: string[] = [];
   const seenHashes = new Set<string>();
   let success = 0;
   let failed = 0;
-  let duplicate = 0;
+  let totalItems = 0;
+  groupList.forEach((g) => { totalItems += g.items.length; });
+  let processed = 0;
 
-  for (let i = 0; i < entries.length; i += 1) {
-    const entry = entries[i];
-    options.onProgress?.({ current: i, total: entries.length });
+  for (const group of groupList) {
+    const dirName = await computeStableId(group.prompt);
+    const dir = zip.folder(dirName);
+    if (!dir) continue;
 
-    let blob = await readImageBlob(entry.localKey);
-    if (!blob && entry.sourceUrl) {
-      blob = await fetchSourceBlob(entry.sourceUrl);
+    dir.file('prompt.txt', group.prompt || '');
+
+    for (const item of group.items) {
+      options.onProgress?.({ current: processed, total: totalItems });
+
+      let blob = await readImageBlob(item.localKey!);
+      if (!blob && item.image) {
+        blob = await fetchSourceBlob(item.image);
+      }
+
+      if (!blob) {
+        failed += 1;
+        errors.push(`${item.localKey}: 无法获取图片数据`);
+        processed += 1;
+        continue;
+      }
+
+      const hash = await computeBlobPrefixHash(blob);
+      if (!seenHashes.has(hash)) {
+        seenHashes.add(hash);
+        const ext = inferExtension(blob.type);
+        const filename = `${sanitizeFilename(item.localKey!)}.${ext}`;
+        dir.file(filename, blob);
+        success += 1;
+      }
+
+      processed += 1;
     }
-
-    if (!blob) {
-      failed += 1;
-      errors.push(`${entry.localKey}: 无法获取图片数据`);
-      continue;
-    }
-
-    const hash = await computeBlobPrefixHash(blob);
-    if (seenHashes.has(hash)) {
-      duplicate += 1;
-      continue;
-    }
-    seenHashes.add(hash);
-
-    const ext = inferExtension(blob.type);
-    const sourceKey = `${entry.type}-${entry.refId}`;
-    sourceCounters[sourceKey] = (sourceCounters[sourceKey] || 0) + 1;
-    const idx = sourceCounters[sourceKey];
-    const filename = `${entry.timestamp}_${sourceKey}_${idx}.${ext}`;
-    zip.file(filename, blob);
-    success += 1;
   }
 
-  options.onProgress?.({ current: entries.length, total: entries.length });
+  options.onProgress?.({ current: totalItems, total: totalItems });
 
   const zipBlob = await zip.generateAsync({ type: 'blob' });
   return {
     blob: zipBlob,
-    result: { success, failed, total: entries.length, errors },
+    result: { success, failed, total: totalItems, errors },
   };
 };
 
@@ -220,8 +203,7 @@ export const buildGroupDownloadZip = async (
 
   zip.file('prompt.txt', prompt || '');
 
-  for (let i = 0; i < generatedItems.length; i++) {
-    const item = generatedItems[i];
+  for (const item of generatedItems) {
     let blob: Blob | null = null;
     if (item.localKey) {
       blob = await readImageBlob(item.localKey);
@@ -232,7 +214,7 @@ export const buildGroupDownloadZip = async (
     if (!blob) continue;
 
     const ext = inferExtension(blob.type);
-    const filename = `image_${String(i + 1).padStart(3, '0')}.${ext}`;
+    const filename = `${sanitizeFilename(item.localKey || item.id)}.${ext}`;
     zip.file(filename, blob);
   }
 
@@ -253,5 +235,5 @@ export const downloadBlob = (blob: Blob, filename: string): void => {
 const padTwo = (n: number) => String(n).padStart(2, '0');
 
 export const buildZipFilename = (now: Date = new Date()): string => {
-  return `moe-atelier-images-${now.getFullYear()}${padTwo(now.getMonth() + 1)}${padTwo(now.getDate())}-${padTwo(now.getHours())}${padTwo(now.getMinutes())}${padTwo(now.getSeconds())}.zip`;
+  return `moe-atelier-${now.getFullYear()}${padTwo(now.getMonth() + 1)}${padTwo(now.getDate())}-${padTwo(now.getHours())}${padTwo(now.getMinutes())}${padTwo(now.getSeconds())}.zip`;
 };

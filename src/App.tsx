@@ -567,7 +567,7 @@ function App() {
       const lastDownloadTime = config.skipDownloadedInDownloadAll !== false
         ? (loadLastDownloadTime() ?? undefined)
         : undefined;
-      const pack = await buildBatchDownloadZip(tasks, collectedItems, {
+      const pack = await buildBatchDownloadZip(collectedItems, {
         onProgress: (p) => setDownloadProgress(p),
         lastDownloadTime,
       });
