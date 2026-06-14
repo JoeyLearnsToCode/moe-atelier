@@ -391,24 +391,11 @@ function App() {
 
     if (formatChanged && !changedValues.activeApiProfileId) {
       const formatConfig = loadFormatConfig(nextFormat);
-      nextConfig = { ...nextConfig, ...formatConfig, apiFormat: nextFormat };
+      const { apiUrl: _u, apiKey: _k, model: _m, ...restFormatConfig } = formatConfig;
+      nextConfig = { ...nextConfig, ...restFormatConfig, apiFormat: nextFormat };
       form.setFieldsValue({
-        apiUrl: formatConfig.apiUrl,
-        apiKey: formatConfig.apiKey,
-        model: formatConfig.model,
-        apiVersion: formatConfig.apiVersion,
-        vertexProjectId: formatConfig.vertexProjectId,
-        vertexLocation: formatConfig.vertexLocation,
-        vertexPublisher: formatConfig.vertexPublisher,
-        thinkingBudget: formatConfig.thinkingBudget,
-        includeThoughts: formatConfig.includeThoughts,
-        includeImageConfig: formatConfig.includeImageConfig,
-        includeSafetySettings: formatConfig.includeSafetySettings,
-        safety: formatConfig.safety,
-        imageConfig: formatConfig.imageConfig,
-        webpQuality: formatConfig.webpQuality,
-        useResponseModalities: formatConfig.useResponseModalities,
-        customJson: formatConfig.customJson,
+        ...restFormatConfig,
+        apiFormat: nextFormat,
       });
       setModels([]);
     }
