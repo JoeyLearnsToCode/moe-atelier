@@ -174,6 +174,10 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
   const lastCollectionRevisionRef = useRef(collectionRevision);
   const retrySettingsRef = useRef({ interval: retryInterval, limit: retryLimit });
   const generationEpochRef = useRef(0);
+  const [genPreviewIndex, setGenPreviewIndex] = useState(0);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const galleryRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     retrySettingsRef.current = { interval: retryInterval, limit: retryLimit };
   }, [retryInterval, retryLimit]);
@@ -1748,6 +1752,35 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
     setIsGlobalLoading(false);
   };
 
+  const handleGenGalleryTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleGenGalleryTouchEnd = (e: React.TouchEvent) => {
+    const genCount = generatedImages.length;
+    if (genCount <= 1) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    if (Math.abs(dx) < 40) return;
+    if (Math.abs(dy) > Math.abs(dx) * 0.6) return;
+    if (dx > 0) {
+      setGenPreviewIndex((genPreviewIndex - 1 + genCount) % genCount);
+    } else {
+      setGenPreviewIndex((genPreviewIndex + 1) % genCount);
+    }
+    const targetIdx = dx > 0
+      ? (genPreviewIndex - 1 + genCount) % genCount
+      : (genPreviewIndex + 1) % genCount;
+    const container = galleryRef.current;
+    if (container) {
+      const child = container.children[targetIdx] as HTMLElement;
+      if (child) {
+        child.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      }
+    }
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -2264,7 +2297,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
             <Text type="secondary" style={{ fontSize: 13 }}>准备好开始创作了吗？</Text>
           </div>
         ) : (
-          <Image.PreviewGroup>
+          <>
             {results.length > 0 && (
               <div className="mobile-compact-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 {results.map((result: SubTaskResult) => {
@@ -2436,7 +2469,15 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                     </Text>
                   </div>
                 )}
-                <div className="generated-gallery">
+                <div className="generated-gallery" ref={galleryRef}
+                  onTouchStart={handleGenGalleryTouchStart}
+                  onTouchEnd={handleGenGalleryTouchEnd}>
+                  <Image.PreviewGroup
+                    preview={{
+                      current: genPreviewIndex,
+                      onChange: (current) => setGenPreviewIndex(current),
+                    }}
+                  >
                   {generatedImages.map((img) => (
                     <div key={img.id} className="polaroid-paper generated-paper">
                       <div style={{
@@ -2490,10 +2531,11 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                       </div>
                     </div>
                   ))}
+                  </Image.PreviewGroup>
                 </div>
               </>
             )}
-          </Image.PreviewGroup>
+          </>
         )}
       </div>
     </div>
