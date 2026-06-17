@@ -2502,17 +2502,13 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                 <div className="generated-gallery" ref={galleryRef}
                   onTouchStart={handleGenGalleryTouchStart}
                   onTouchEnd={handleGenGalleryTouchEnd}>
-                  <Image.PreviewGroup
-                    items={generatedImages.map(img => img.displayUrl)}
-                    preview={{
-                      visible: previewVisible,
-                      current: genPreviewIndex,
-                      onVisibleChange: (visible) => setPreviewVisible(visible),
-                      onChange: (current) => setGenPreviewIndex(current),
-                    }}
-                  >
-                  {generatedImages.map((img) => (
-                    <div key={img.id} className="polaroid-paper generated-paper">
+                  {generatedImages.map((img, idx) => (
+                    <div key={img.id} className="polaroid-paper generated-paper"
+                         onClick={(e) => {
+                           if ((e.target as HTMLElement).closest('a, button')) return;
+                           setGenPreviewIndex(idx);
+                           setPreviewVisible(true);
+                         }}>
                       <div style={{
                         position: 'relative',
                         paddingTop: '114.28%',
@@ -2534,6 +2530,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                               alt="Generated"
                               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                               wrapperStyle={{ width: '100%', height: '100%' }}
+                              preview={false}
                             />
                           </PrivacyBlur>
                         </div>
@@ -2564,8 +2561,22 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                       </div>
                     </div>
                   ))}
-                  </Image.PreviewGroup>
                 </div>
+                <Image.PreviewGroup
+                  items={generatedImages.map(img => img.displayUrl)}
+                  preview={{
+                    visible: previewVisible,
+                    current: genPreviewIndex,
+                    onVisibleChange: (visible) => setPreviewVisible(visible),
+                    onChange: (current) => setGenPreviewIndex(current),
+                  }}
+                >
+                  <Image
+                    src={generatedImages[genPreviewIndex]?.displayUrl}
+                    preview={false}
+                    style={{ display: 'none' }}
+                  />
+                </Image.PreviewGroup>
               </>
             )}
           </>
