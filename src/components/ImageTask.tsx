@@ -175,9 +175,12 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
   const retrySettingsRef = useRef({ interval: retryInterval, limit: retryLimit });
   const generationEpochRef = useRef(0);
   const [genPreviewIndex, setGenPreviewIndex] = useState(0);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const genPreviewIndexRef = useRef(0);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const galleryRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { genPreviewIndexRef.current = genPreviewIndex; }, [genPreviewIndex]);
   useEffect(() => {
     retrySettingsRef.current = { interval: retryInterval, limit: retryLimit };
   }, [retryInterval, retryLimit]);
@@ -1284,6 +1287,8 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
     taskDoneRef.current = false;
     runSuccessCountRef.current = 0;
     setGeneratedImages([]);
+    setGenPreviewIndex(0);
+    setPreviewVisible(false);
 
     const startTime = Date.now();
     setElapsedNow(startTime);
@@ -1752,6 +1757,41 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
     setIsGlobalLoading(false);
   };
 
+  const scrollGalleryTo = (idx: number) => {
+    const container = galleryRef.current;
+    if (!container) return;
+    const child = container.children[idx] as HTMLElement;
+    if (child) {
+      child.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  };
+
+  const navigateGenImage = (direction: -1 | 1) => {
+    const genCount = generatedImages.length;
+    if (genCount <= 1) return;
+    const newIdx = (genPreviewIndexRef.current + direction + genCount) % genCount;
+    setGenPreviewIndex(newIdx);
+    scrollGalleryTo(newIdx);
+  };
+
+  // Keyboard navigation for generated gallery
+  useEffect(() => {
+    const el = galleryRef.current;
+    if (!el || generatedImages.length <= 1) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        navigateGenImage(-1);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        navigateGenImage(1);
+      }
+    };
+    el.addEventListener('keydown', handleKeyDown);
+    el.setAttribute('tabindex', '0');
+    return () => el.removeEventListener('keydown', handleKeyDown);
+  }, [generatedImages.length, navigateGenImage]);
+
   const handleGenGalleryTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
@@ -1765,19 +1805,9 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
     if (Math.abs(dx) < 40) return;
     if (Math.abs(dy) > Math.abs(dx) * 0.6) return;
     if (dx > 0) {
-      setGenPreviewIndex((genPreviewIndex - 1 + genCount) % genCount);
+      navigateGenImage(-1);
     } else {
-      setGenPreviewIndex((genPreviewIndex + 1) % genCount);
-    }
-    const targetIdx = dx > 0
-      ? (genPreviewIndex - 1 + genCount) % genCount
-      : (genPreviewIndex + 1) % genCount;
-    const container = galleryRef.current;
-    if (container) {
-      const child = container.children[targetIdx] as HTMLElement;
-      if (child) {
-        child.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-      }
+      navigateGenImage(1);
     }
   };
 
@@ -2473,8 +2503,11 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                   onTouchStart={handleGenGalleryTouchStart}
                   onTouchEnd={handleGenGalleryTouchEnd}>
                   <Image.PreviewGroup
+                    items={generatedImages.map(img => img.displayUrl)}
                     preview={{
+                      visible: previewVisible,
                       current: genPreviewIndex,
+                      onVisibleChange: (visible) => setPreviewVisible(visible),
                       onChange: (current) => setGenPreviewIndex(current),
                     }}
                   >
