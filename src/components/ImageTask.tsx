@@ -143,6 +143,9 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
   const [retryInterval, setRetryInterval] = useState<number>(1000);
   const [retryLimit, setRetryLimit] = useState<number>(-1);
   const [generationCount, setGenerationCount] = useState<number>(1);
+  const [retryIntervalCleared, setRetryIntervalCleared] = useState(false);
+  const [retryLimitCleared, setRetryLimitCleared] = useState(false);
+  const [generationCountCleared, setGenerationCountCleared] = useState(false);
   const retryIntervalRef = useRef(retryInterval);
   const retryLimitRef = useRef(retryLimit);
   const generationCountRef = useRef(generationCount);
@@ -503,24 +506,66 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
   };
 
   const handleRetryIntervalChange = (value: number | null) => {
-    const nextRetryInterval = Math.max(0, value || 0) * 1000;
     markRetryIntervalDirty();
-    retryIntervalRef.current = nextRetryInterval;
-    setRetryInterval(nextRetryInterval);
+    if (value === null) {
+      setRetryIntervalCleared(true);
+    } else {
+      setRetryIntervalCleared(false);
+      const next = Math.max(0, value) * 1000;
+      retryIntervalRef.current = next;
+      setRetryInterval(next);
+    }
+  };
+
+  const handleRetryIntervalBlur = () => {
+    if (retryIntervalCleared) {
+      const defaultVal = 1000;
+      retryIntervalRef.current = defaultVal;
+      setRetryInterval(defaultVal);
+      setRetryIntervalCleared(false);
+    }
   };
 
   const handleRetryLimitChange = (value: number | null) => {
-    const nextRetryLimit = typeof value === 'number' ? Math.max(-1, Math.floor(value)) : -1;
     markRetryLimitDirty();
-    retryLimitRef.current = nextRetryLimit;
-    setRetryLimit(nextRetryLimit);
+    if (value === null) {
+      setRetryLimitCleared(true);
+    } else {
+      setRetryLimitCleared(false);
+      const next = Math.max(-1, Math.floor(value));
+      retryLimitRef.current = next;
+      setRetryLimit(next);
+    }
+  };
+
+  const handleRetryLimitBlur = () => {
+    if (retryLimitCleared) {
+      const defaultVal = -1;
+      retryLimitRef.current = defaultVal;
+      setRetryLimit(defaultVal);
+      setRetryLimitCleared(false);
+    }
   };
 
   const handleGenerationCountChange = (value: number | null) => {
-    const nextGenerationCount = Math.max(1, Math.floor(value || 1));
     markGenerationCountDirty();
-    generationCountRef.current = nextGenerationCount;
-    setGenerationCount(nextGenerationCount);
+    if (value === null) {
+      setGenerationCountCleared(true);
+    } else {
+      setGenerationCountCleared(false);
+      const next = Math.max(1, Math.floor(value));
+      generationCountRef.current = next;
+      setGenerationCount(next);
+    }
+  };
+
+  const handleGenerationCountBlur = () => {
+    if (generationCountCleared) {
+      const defaultVal = 1;
+      generationCountRef.current = defaultVal;
+      setGenerationCount(defaultVal);
+      setGenerationCountCleared(false);
+    }
   };
 
   const handleApiProfileChange = (value: string) => {
@@ -2268,8 +2313,9 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                         min={0} 
                         step={0.1}
                         bordered={false}
-                        value={retryInterval / 1000} 
+                        value={retryIntervalCleared ? null : retryInterval / 1000} 
                         onChange={handleRetryIntervalChange} 
+                        onBlur={handleRetryIntervalBlur}
                         style={{ width: 60 }} 
                       />
                     </div>
@@ -2280,8 +2326,9 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                         min={-1}
                         step={1}
                         bordered={false}
-                        value={retryLimit} 
+                        value={retryLimitCleared ? null : retryLimit} 
                         onChange={handleRetryLimitChange} 
+                        onBlur={handleRetryLimitBlur}
                         style={{ width: 60 }} 
                       />
                     </div>
@@ -2292,8 +2339,9 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                         min={1}
                         step={1}
                         bordered={false}
-                        value={generationCount} 
+                        value={generationCountCleared ? null : generationCount} 
                         onChange={handleGenerationCountChange} 
+                        onBlur={handleGenerationCountBlur}
                         style={{ width: 60 }} 
                       />
                     </div>
