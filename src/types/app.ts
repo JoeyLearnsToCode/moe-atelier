@@ -53,6 +53,11 @@ export interface AppConfig {
 
   apiProfiles?: ApiProfile[];
   activeApiProfileId?: string;
+
+  defaultRetryInterval?: number;
+  defaultRetryLimit?: number;
+  defaultGenerationCount?: number;
+  defaultApiProfileId?: string;
 }
 
 export interface TaskConfig {

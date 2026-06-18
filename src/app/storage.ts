@@ -114,6 +114,10 @@ const DEFAULT_CONFIG: AppConfig = {
   enableCollection: true,
   privacyMode: false,
   skipDownloadedInDownloadAll: true,
+  defaultRetryInterval: 1,
+  defaultRetryLimit: -1,
+  defaultGenerationCount: 1,
+  defaultApiProfileId: 'default',
 };
 
 const DEFAULT_GLOBAL_STATS: GlobalStats = {
@@ -314,6 +318,10 @@ export const saveConfig = (config: AppConfig) => {
     skipDownloadedInDownloadAll: config.skipDownloadedInDownloadAll,
     apiProfiles: config.apiProfiles,
     activeApiProfileId: config.activeApiProfileId,
+    defaultRetryInterval: config.defaultRetryInterval,
+    defaultRetryLimit: config.defaultRetryLimit,
+    defaultGenerationCount: config.defaultGenerationCount,
+    defaultApiProfileId: config.defaultApiProfileId,
   };
   safeStorageSet(STORAGE_KEYS.config, JSON.stringify(baseConfig), 'app cache');
   const formatMap = loadFormatConfigMap();

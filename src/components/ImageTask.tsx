@@ -140,16 +140,16 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
   const [concurrency, setConcurrency] = useState<number>(DEFAULT_CONCURRENCY);
   const [concurrencyInput, setConcurrencyInput] = useState<string>(String(DEFAULT_CONCURRENCY));
   const [enableSound, setEnableSound] = useState<boolean>(true);
-  const [retryInterval, setRetryInterval] = useState<number>(1000);
-  const [retryLimit, setRetryLimit] = useState<number>(-1);
-  const [generationCount, setGenerationCount] = useState<number>(1);
+  const [retryInterval, setRetryInterval] = useState<number>(() => (config.defaultRetryInterval ?? 1) * 1000);
+  const [retryLimit, setRetryLimit] = useState<number>(() => config.defaultRetryLimit ?? -1);
+  const [generationCount, setGenerationCount] = useState<number>(() => config.defaultGenerationCount ?? 1);
   const [retryIntervalCleared, setRetryIntervalCleared] = useState(false);
   const [retryLimitCleared, setRetryLimitCleared] = useState(false);
   const [generationCountCleared, setGenerationCountCleared] = useState(false);
   const retryIntervalRef = useRef(retryInterval);
   const retryLimitRef = useRef(retryLimit);
   const generationCountRef = useRef(generationCount);
-  const [apiProfileId, setApiProfileId] = useState<string>('default');
+  const [apiProfileId, setApiProfileId] = useState<string>(() => config.defaultApiProfileId || config.activeApiProfileId || 'default');
   const apiProfileIdRef = useRef(apiProfileId);
   
   const [results, setResults] = useState<SubTaskResult[]>([]);
@@ -205,7 +205,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
 
   const resolveTaskApiProfileId = (value?: string) => {
     const availableProfiles = config.apiProfiles || [{ id: 'default', name: '默认配置' }];
-    const fallbackProfileId = config.activeApiProfileId || availableProfiles[0]?.id || 'default';
+    const fallbackProfileId = config.defaultApiProfileId || config.activeApiProfileId || availableProfiles[0]?.id || 'default';
     if (!value) return fallbackProfileId;
     return availableProfiles.some((profile) => profile.id === value) ? value : fallbackProfileId;
   };
@@ -220,9 +220,9 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
         setConcurrency(nextConcurrency);
         setConcurrencyInput(String(nextConcurrency));
         setEnableSound(typeof stored.enableSound === 'boolean' ? stored.enableSound : true);
-        setRetryInterval(typeof stored.retryInterval === 'number' ? stored.retryInterval : 1000);
-        setRetryLimit(typeof stored.retryLimit === 'number' ? stored.retryLimit : -1);
-        setGenerationCount(typeof stored.generationCount === 'number' ? stored.generationCount : 1);
+        setRetryInterval(typeof stored.retryInterval === 'number' ? stored.retryInterval : (config.defaultRetryInterval ?? 1) * 1000);
+        setRetryLimit(typeof stored.retryLimit === 'number' ? stored.retryLimit : (config.defaultRetryLimit ?? -1));
+        setGenerationCount(typeof stored.generationCount === 'number' ? stored.generationCount : (config.defaultGenerationCount ?? 1));
         setApiProfileId(resolveTaskApiProfileId(stored.apiProfileId));
         setStats({ ...DEFAULT_TASK_STATS, ...(stored.stats || {}) });
         const storedResults = Array.isArray(stored.results) ? stored.results : [];

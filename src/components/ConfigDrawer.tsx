@@ -15,6 +15,7 @@ import {
   Typography,
   Row,
   Col,
+  InputNumber,
 } from 'antd';
 import {
   ApiFilled,
@@ -305,6 +306,49 @@ const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
               <Switch />
             </Form.Item>
           </div>
+        </Form.Item>
+      </div>
+
+      <div
+        style={{
+          background: '#F0F5FF',
+          padding: '16px',
+          borderRadius: 16,
+          marginBottom: 24,
+          border: '1px solid #D6E4FF',
+        }}
+      >
+        <Text style={{ fontWeight: 700, color: '#665555', display: 'block', marginBottom: 12 }}>
+          新建任务默认值
+        </Text>
+
+        <Form.Item label={<span style={{ fontWeight: 600, color: '#665555' }}>重试间隔 (秒)</span>} style={{ marginBottom: 12 }}>
+          <Form.Item name="defaultRetryInterval" noStyle>
+            <InputNumber min={0} step={0.1} style={{ width: '100%' }} />
+          </Form.Item>
+        </Form.Item>
+
+        <Form.Item label={<span style={{ fontWeight: 600, color: '#665555' }}>重试次数</span>} style={{ marginBottom: 12 }}>
+          <Form.Item name="defaultRetryLimit" noStyle>
+            <InputNumber min={-1} step={1} style={{ width: '100%' }} />
+          </Form.Item>
+        </Form.Item>
+
+        <Form.Item label={<span style={{ fontWeight: 600, color: '#665555' }}>生成数量</span>} style={{ marginBottom: 12 }}>
+          <Form.Item name="defaultGenerationCount" noStyle>
+            <InputNumber min={1} step={1} style={{ width: '100%' }} />
+          </Form.Item>
+        </Form.Item>
+
+        <Form.Item label={<span style={{ fontWeight: 600, color: '#665555' }}>默认 API 配置档</span>} style={{ marginBottom: 0 }}>
+          <Form.Item name="defaultApiProfileId" noStyle>
+            <Select
+              options={[
+                ...profiles.map(p => ({ label: p.name, value: p.id })),
+              ]}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
         </Form.Item>
       </div>
 
