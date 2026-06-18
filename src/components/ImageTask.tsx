@@ -176,6 +176,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
   const generationEpochRef = useRef(0);
   const [genPreviewIndex, setGenPreviewIndex] = useState(0);
   const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewOpenKey, setPreviewOpenKey] = useState(0);
   const genPreviewIndexRef = useRef(0);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
@@ -1812,6 +1813,55 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
     }
   };
 
+  useEffect(() => {
+    if (!previewVisible || generatedImages.length <= 1) return;
+
+    let swipeStartX = 0;
+    let swipeStartY = 0;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      swipeStartX = e.touches[0].clientX;
+      swipeStartY = e.touches[0].clientY;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (swipeStartX === 0 && swipeStartY === 0) return;
+      const dx = e.touches[0].clientX - swipeStartX;
+      const dy = e.touches[0].clientY - swipeStartY;
+      if (Math.abs(dx) > Math.abs(dy) * 2) {
+        e.preventDefault();
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (swipeStartX === 0 && swipeStartY === 0) return;
+      const dx = e.changedTouches[0].clientX - swipeStartX;
+      const dy = e.changedTouches[0].clientY - swipeStartY;
+      swipeStartX = 0;
+      swipeStartY = 0;
+      if (Math.abs(dx) < 40) return;
+      if (Math.abs(dy) > Math.abs(dx) * 0.5) return;
+      const genCount = generatedImages.length;
+      if (dx > 0) {
+        setGenPreviewIndex(prev => (prev - 1 + genCount) % genCount);
+      } else {
+        setGenPreviewIndex(prev => (prev + 1) % genCount);
+      }
+    };
+
+    const opts = { capture: true, passive: false };
+    document.addEventListener('touchstart', onTouchStart, opts);
+    document.addEventListener('touchmove', onTouchMove, opts);
+    document.addEventListener('touchend', onTouchEnd, opts);
+
+    return () => {
+      document.removeEventListener('touchstart', onTouchStart, opts);
+      document.removeEventListener('touchmove', onTouchMove, opts);
+      document.removeEventListener('touchend', onTouchEnd, opts);
+    };
+  }, [previewVisible, generatedImages.length]);
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -2503,11 +2553,12 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                 <div className="generated-gallery" ref={galleryRef}
                   onTouchStart={handleGenGalleryTouchStart}
                   onTouchEnd={handleGenGalleryTouchEnd}>
-                  {generatedImages.map((img, idx) => (
+                   {generatedImages.map((img, idx) => (
                     <div key={img.id} className="polaroid-paper generated-paper"
                          onClick={(e) => {
                            if ((e.target as HTMLElement).closest('a, button')) return;
                            setGenPreviewIndex(idx);
+                           setPreviewOpenKey(k => k + 1);
                            setPreviewVisible(true);
                          }}>
                       <div style={{
@@ -2564,6 +2615,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
                   ))}
                 </div>
                 <Image.PreviewGroup
+                  key={previewOpenKey}
                   items={generatedImages.map(img => img.displayUrl)}
                   preview={{
                     visible: previewVisible,
