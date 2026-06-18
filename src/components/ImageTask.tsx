@@ -1486,6 +1486,151 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
 
         rawResponse = JSON.stringify(responseData);
         imageUrl = resolveImageFromResponse(responseData);
+      } else if (apiFormat === 'openai-hybrid') {
+        const apiUrl = resolveApiUrl(profile.apiUrl, 'openai-hybrid');
+        const baseInfo = normalizeApiBase(apiUrl);
+        const basePath = baseInfo.origin
+          ? `${baseInfo.origin}${baseInfo.segments.length ? `/${baseInfo.segments.join('/')}` : ''}`
+          : apiUrl.replace(/\/+$/, '');
+        const version = resolveApiVersion(apiUrl, profile.apiVersion, 'v1');
+        const hasVersion = Boolean(inferApiVersionFromUrl(apiUrl));
+        const openAiBase = hasVersion ? basePath : `${basePath}/${version}`;
+
+        if (!hasImage) {
+          const endpoint = 'images/generations';
+          const requestUrl = openAiBase.endsWith(`/${endpoint}`)
+            ? openAiBase
+            : `${openAiBase}/${endpoint}`;
+
+          const headers: Record<string, string> = {
+            'Authorization': `Bearer ${profile.apiKey}`,
+          };
+          const payload = { model: profile.model, prompt: promptRef.current, n: 1, moderation: 'low' };
+          let responseData: any;
+
+          if (config.stream) {
+            const fetchResponse = await fetch(requestUrl, {
+              method: 'POST',
+              headers: { ...headers, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...payload, stream: true }),
+              signal: controller.signal,
+            });
+            if (!fetchResponse.ok) {
+              throw new Error(
+                await formatResponseErrorMessage(
+                  fetchResponse,
+                  fetchResponse.statusText || '请求失败',
+                ),
+              );
+            }
+            responseData = await readGeminiStream(fetchResponse);
+          } else {
+            const response = await axios.post(requestUrl, payload, {
+              headers: { ...headers, 'Content-Type': 'application/json' },
+              signal: controller.signal,
+            });
+            responseData = response.data;
+          }
+
+          rawResponse = JSON.stringify(responseData);
+          imageUrl = resolveImageFromResponse(responseData);
+        } else {
+          const chatUrl = openAiBase.endsWith('/chat/completions')
+            ? openAiBase
+            : `${openAiBase}/chat/completions`;
+
+          const messages: any[] = [];
+          const content: any[] = [];
+          if (prompt) {
+            content.push({ type: 'text', text: prompt });
+          }
+          if (hasImage) {
+            for (const file of fileList) {
+              if (file.originFileObj) {
+                const base64 = await getBase64(file.originFileObj);
+                content.push({
+                  type: 'image_url',
+                  image_url: {
+                    url: base64,
+                  },
+                });
+              }
+            }
+          }
+          messages.push({
+            role: 'user',
+            content,
+          });
+          const headers = {
+            'Authorization': `Bearer ${profile.apiKey}`,
+            'x-api-key': profile.apiKey,
+          };
+
+          if (config.stream) {
+            const fetchResponse = await fetch(chatUrl, {
+              method: 'POST',
+              headers: { ...headers, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ model: profile.model, messages, stream: true }),
+              signal: controller.signal,
+            });
+
+            if (!fetchResponse.ok) {
+              throw new Error(
+                await formatResponseErrorMessage(
+                  fetchResponse,
+                  fetchResponse.statusText || '请求失败',
+                ),
+              );
+            }
+
+            const reader = fetchResponse.body?.getReader();
+            const decoder = new TextDecoder();
+            let generatedText = '';
+            let pending = '';
+            const consumeLine = (line: string) => {
+              const cleaned = line.replace(/\r$/, '');
+              if (!cleaned.startsWith('data:')) return;
+              const payload = cleaned.slice(5).trimStart();
+              if (!payload || payload === '[DONE]') return;
+              try {
+                const json = JSON.parse(payload);
+                const delta = json.choices?.[0]?.delta;
+                if (delta?.content) generatedText += delta.content;
+                if (delta?.reasoning_content) generatedText += delta.reasoning_content;
+              } catch (e) { /* ignore */ }
+            };
+
+            if (reader) {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                pending += decoder.decode(value, { stream: true });
+                let newlineIndex = pending.indexOf('\n');
+                while (newlineIndex >= 0) {
+                  const line = pending.slice(0, newlineIndex);
+                  pending = pending.slice(newlineIndex + 1);
+                  consumeLine(line);
+                  newlineIndex = pending.indexOf('\n');
+                }
+              }
+              const tail = decoder.decode();
+              if (tail) pending += tail;
+            }
+            if (pending) {
+              consumeLine(pending);
+            }
+            rawResponse = generatedText;
+            imageUrl = parseMarkdownImage(generatedText);
+          } else {
+            const response = await axios.post(
+              chatUrl,
+              { model: profile.model, messages, stream: false },
+              { headers: { ...headers, 'Content-Type': 'application/json' }, signal: controller.signal }
+            );
+            rawResponse = JSON.stringify(response.data);
+            imageUrl = resolveImageFromResponse(response.data);
+          }
+        }
       } else if (apiFormat === 'openai') {
         const apiUrl = resolveApiUrl(profile.apiUrl, 'openai');
         const baseInfo = normalizeApiBase(apiUrl);

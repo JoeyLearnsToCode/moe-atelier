@@ -248,6 +248,7 @@ const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
           <Radio.Group optionType="button" buttonStyle="solid">
             <Radio.Button value="openai">OpenAI</Radio.Button>
             <Radio.Button value="openai-image">OpenAI Image</Radio.Button>
+            <Radio.Button value="openai-hybrid">OpenAI 混合</Radio.Button>
             <Radio.Button value="gemini">Gemini</Radio.Button>
             <Radio.Button value="vertex">Vertex</Radio.Button>
           </Radio.Group>
@@ -257,7 +258,7 @@ const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
       <Form.Item noStyle shouldUpdate={(prev, cur) => prev.apiFormat !== cur.apiFormat}>
         {({ getFieldValue }) => {
           const apiFormat = getFieldValue('apiFormat') || 'openai';
-          if (apiFormat === 'openai' || apiFormat === 'openai-image') {
+          if (apiFormat === 'openai' || apiFormat === 'openai-image' || apiFormat === 'openai-hybrid') {
             return null;
           }
           return (
@@ -425,7 +426,7 @@ const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
       <Form.Item noStyle shouldUpdate={(prev, cur) => prev.apiFormat !== cur.apiFormat}>
         {({ getFieldValue }) => {
           const apiFormat = getFieldValue('apiFormat') || 'openai';
-          if (apiFormat === 'openai' || apiFormat === 'openai-image') {
+          if (apiFormat === 'openai' || apiFormat === 'openai-image' || apiFormat === 'openai-hybrid') {
             return null;
           }
           return (

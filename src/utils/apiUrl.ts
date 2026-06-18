@@ -1,10 +1,11 @@
-export type ApiFormat = 'openai' | 'gemini' | 'vertex' | 'openai-image';
+export type ApiFormat = 'openai' | 'gemini' | 'vertex' | 'openai-image' | 'openai-hybrid';
 
 export const API_VERSION_OPTIONS = ['v1', 'v1beta', 'v1beta1'];
 
 export const DEFAULT_API_BASES: Record<ApiFormat, string> = {
   openai: 'https://api.openai.com/v1',
   'openai-image': 'https://api.openai.com/v1',
+  'openai-hybrid': 'https://api.openai.com/v1',
   gemini: 'https://generativelanguage.googleapis.com',
   vertex: 'https://aiplatform.googleapis.com',
 };

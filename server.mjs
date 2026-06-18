@@ -318,6 +318,8 @@ const isVersionSegment = (value) => API_VERSION_REGEX.test(String(value || ''))
 
 const DEFAULT_API_BASES = {
   openai: 'https://api.openai.com/v1',
+  'openai-image': 'https://api.openai.com/v1',
+  'openai-hybrid': 'https://api.openai.com/v1',
   gemini: 'https://generativelanguage.googleapis.com',
   vertex: 'https://aiplatform.googleapis.com',
 }
