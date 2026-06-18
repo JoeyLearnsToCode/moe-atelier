@@ -1759,21 +1759,11 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
     setIsGlobalLoading(false);
   };
 
-  const scrollGalleryTo = (idx: number) => {
-    const container = galleryRef.current;
-    if (!container) return;
-    const child = container.children[idx] as HTMLElement;
-    if (child) {
-      child.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-    }
-  };
-
   const navigateGenImage = (direction: -1 | 1) => {
     const genCount = generatedImages.length;
     if (genCount <= 1) return;
     const newIdx = (genPreviewIndexRef.current + direction + genCount) % genCount;
     setGenPreviewIndex(newIdx);
-    scrollGalleryTo(newIdx);
   };
 
   // Keyboard navigation for generated gallery
