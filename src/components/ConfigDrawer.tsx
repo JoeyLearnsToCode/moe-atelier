@@ -29,11 +29,13 @@ import {
   EditOutlined,
   SaveOutlined,
   CloseOutlined,
+  DownloadOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
-import { Popconfirm } from 'antd';
+import { Popconfirm, message } from 'antd';
 import { v4 as uuidv4 } from 'uuid';
 import type { FormInstance } from 'antd/es/form';
-import type { AppConfig } from '../types/app';
+import type { AppConfig, ApiProfile } from '../types/app';
 import type { ApiFormat } from '../utils/apiUrl';
 import { API_VERSION_OPTIONS, DEFAULT_API_BASES } from '../utils/apiUrl';
 import { ASPECT_RATIO_OPTIONS, IMAGE_SIZE_OPTIONS, SAFETY_OPTIONS } from '../app/constants';
@@ -50,6 +52,19 @@ interface ConfigDrawerProps {
   models: { label: string; value: string }[];
   loadingModels: boolean;
   fetchModels: () => void;
+}
+
+function mergeApiProfiles(
+  existing: ApiProfile[] | undefined,
+  imported: ApiProfile[] | undefined,
+): ApiProfile[] | undefined {
+  if (!imported) return undefined;
+  if (!existing) return imported;
+  const map = new Map(existing.map(p => [p.id, { ...p }]));
+  for (const p of imported) {
+    map.set(p.id, { ...p });
+  }
+  return Array.from(map.values());
 }
 
 const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
@@ -104,6 +119,61 @@ const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
 
   const handleProfileChange = (value: string) => {
     onConfigChange({ activeApiProfileId: value }, { ...config, activeApiProfileId: value });
+  };
+
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleExportConfig = () => {
+    const exportData: Record<string, unknown> = {
+      apiProfiles: config.apiProfiles,
+      activeApiProfileId: config.activeApiProfileId,
+      stream: config.stream,
+      enableCollection: config.enableCollection,
+      privacyMode: config.privacyMode,
+      skipDownloadedInDownloadAll: config.skipDownloadedInDownloadAll,
+      defaultRetryInterval: config.defaultRetryInterval,
+      defaultRetryLimit: config.defaultRetryLimit,
+      defaultGenerationCount: config.defaultGenerationCount,
+      defaultApiProfileId: config.defaultApiProfileId,
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `moe-config-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    message.success('配置已导出');
+  };
+
+  const handleImportConfig = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = JSON.parse(evt.target?.result as string);
+        if (!data || typeof data !== 'object') {
+          message.error('无效的配置文件');
+          return;
+        }
+        const mergedProfiles = mergeApiProfiles(config.apiProfiles, data.apiProfiles);
+        const importData = { ...data };
+        if (mergedProfiles) {
+          importData.apiProfiles = mergedProfiles;
+          const activeId = importData.activeApiProfileId || config.activeApiProfileId || 'default';
+          if (!mergedProfiles.some(p => p.id === activeId)) {
+            importData.activeApiProfileId = mergedProfiles[0]?.id || 'default';
+          }
+        }
+        onConfigChange(importData, { ...config, ...importData });
+        message.success('配置已导入');
+      } catch {
+        message.error('配置文件解析失败');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   return (
@@ -522,6 +592,30 @@ const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
             设置将自动应用于所有活动任务窗口。请确保您的 API 密钥有足够的配额。
           </Text>
         </Space>
+      </div>
+
+      <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
+        <Button
+          icon={<DownloadOutlined />}
+          onClick={handleExportConfig}
+          style={{ flex: 1 }}
+        >
+          导出配置
+        </Button>
+        <Button
+          icon={<UploadOutlined />}
+          onClick={() => fileInputRef.current?.click()}
+          style={{ flex: 1 }}
+        >
+          导入配置
+        </Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          style={{ display: 'none' }}
+          onChange={handleImportConfig}
+        />
       </div>
     </Form>
   </Drawer>

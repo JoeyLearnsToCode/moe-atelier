@@ -369,7 +369,15 @@ function App() {
         const { id, name, ...profileFields } = selectedProfile;
         nextConfig = { ...nextConfig, ...profileFields };
         form.setFieldsValue(profileFields);
-        changedValues.apiFormat = selectedProfile.apiFormat; // Trigger format config load if format differs
+        changedValues.apiFormat = selectedProfile.apiFormat;
+      }
+    } else if (changedValues.apiProfiles) {
+      const activeId = nextConfig.activeApiProfileId || config.activeApiProfileId;
+      const selectedProfile = nextConfig.apiProfiles?.find(p => p.id === activeId);
+      if (selectedProfile) {
+        const { id, name, ...profileFields } = selectedProfile;
+        nextConfig = { ...nextConfig, ...profileFields };
+        form.setFieldsValue(profileFields);
       }
     } else if (!changedValues.apiProfiles) {
       // Normal field change, sync to active profile
