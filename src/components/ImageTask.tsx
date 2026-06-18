@@ -1376,9 +1376,10 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
 
         if (hasImage) {
           const formData = new FormData();
-          const file = fileList[0];
-          if (file.originFileObj) {
-            formData.append('image', file.originFileObj);
+          for (const file of fileList) {
+            if (file.originFileObj) {
+              formData.append('image[]', file.originFileObj);
+            }
           }
           formData.append('prompt', promptRef.current);
           formData.append('model', profile.model);
