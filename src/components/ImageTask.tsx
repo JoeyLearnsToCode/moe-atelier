@@ -31,6 +31,7 @@ import type { CollectionItem } from '../types/collection';
 import type { LogEntry } from '../types/log';
 import { DEFAULT_TASK_STATS, loadTaskState, saveTaskState, serializeResults, TASK_STATE_VERSION } from './imageTaskState';
 import { getBase64 } from '../utils/file';
+import { injectPngITxt, isPng } from '../utils/pngMetadata';
 import { parseMarkdownImage, resolveImageFromResponse } from '../utils/imageResponse';
 import { openImageDb, IMAGE_STORE_NAME } from '../utils/imageDb';
 import {
@@ -1226,7 +1227,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
     }
   };
 
-  const persistImageLocally = async (sourceUrl: string, key: string) => {
+  const persistImageLocally = async (sourceUrl: string, key: string, prompt?: string) => {
     try {
       const isHttp = /^https?:\/\//i.test(sourceUrl);
       const isData = sourceUrl.startsWith('data:image');
@@ -1236,7 +1237,16 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
 
       const response = await fetch(sourceUrl);
       if (!response.ok) throw new Error('图片下载失败');
-      const blob = await response.blob();
+      let blob = await response.blob();
+      if (prompt) {
+        const buf = await blob.arrayBuffer();
+        if (isPng(buf)) {
+          const injected = injectPngITxt(buf, 'ImagenPrompt', prompt);
+          if (injected !== buf) {
+            blob = new Blob([injected], { type: 'image/png' });
+          }
+        }
+      }
       await saveImageBlob(key, blob);
       const objectUrl = URL.createObjectURL(blob);
       return { displayUrl: objectUrl, localKey: key };
@@ -1247,11 +1257,8 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
   };
 
   const getPreferredImageSrc = (result: SubTaskResult) => {
-    const sourceUrl = result.sourceUrl;
-    if (sourceUrl && (/^https?:\/\//i.test(sourceUrl) || sourceUrl.startsWith('data:image'))) {
-      return sourceUrl;
-    }
-    return result.displayUrl || sourceUrl;
+    if (result.displayUrl) return result.displayUrl;
+    return result.sourceUrl;
   };
 
   const updateResult = (id: string, updates: Partial<SubTaskResult>) => {
@@ -1775,7 +1782,7 @@ const ImageTask: React.FC<ImageTaskProps> = ({ id, storageKey, config, onRemove,
 
         const endTime = Date.now();
         const duration = endTime - startTime;
-        const { displayUrl, localKey } = await persistImageLocally(imageUrl, `${subTaskId}:${endTime}`);
+        const { displayUrl, localKey } = await persistImageLocally(imageUrl, `${subTaskId}:${endTime}`, promptRef.current);
         updateResult(subTaskId, { status: 'success', error: undefined, autoRetry: false, displayUrl, localKey, sourceUrl: imageUrl, savedLocal: false, endTime, duration });
         updateStats('success', duration);
         
